@@ -1,4 +1,5 @@
 from django.db import models
+from django.forms import ValidationError
 from django.utils import timezone
 from django.conf import settings
 
@@ -141,3 +142,63 @@ class MatchVote(TimeStampedModel):
         if self.match_id and self.pick_entry_id:
             if self.pick_entry_id not in (self.match.curso1_id, self.match.curso2_id):
                 raise models.ValidationError("Pick tem de ser uma dos cursos do confronto.")
+
+
+
+class SimpleVoteQuestion(models.Model):
+    competition = models.ForeignKey(
+        Competition, on_delete=models.CASCADE, related_name="simple_questions"
+    )
+    text = models.CharField(max_length=200)           # a pergunta
+
+    def __str__(self):
+        return self.text
+
+    # --- helpers para odds/percentagens (on-the-fly) ---
+    def total_votes(self) -> int:
+        return self.votes.count()
+
+    def counts_by_entry(self):
+        # devolve {entry_id: contagem}
+        from django.db.models import Count
+        rows = (
+            self.votes.values("pick_entry")
+            .annotate(n=Count("id"))
+        )
+        return {row["pick_entry"]: row["n"] for row in rows}
+
+    def leader(self):
+        """(entry, percent) do mais votado; None se não houver votos."""
+        counts = self.counts_by_entry()
+        if not counts:
+            return None
+        total = sum(counts.values())
+        top_id, top_n = max(counts.items(), key=lambda kv: kv[1])
+        # carregamos o objeto Entry só quando necessário
+        entry = CompetitionEntry.objects.select_related("curso").get(pk=top_id)
+        return entry, (top_n / total) if total else 0.0
+
+
+# Voto simples: user escolhe um CompetitionEntry para a pergunta
+class SimpleVote(models.Model):
+    question = models.ForeignKey(
+        SimpleVoteQuestion, on_delete=models.CASCADE, related_name="votes"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="simple_votes"
+    )
+    pick_entry = models.ForeignKey(
+        CompetitionEntry, on_delete=models.CASCADE, related_name="picked_in_simple_votes"
+    )
+
+    class Meta:
+        unique_together = ("question", "user")  # um voto por pergunta
+
+    def __str__(self):
+        return f"{self.user} → {self.pick_entry.curso} [{self.question.text}]"
+
+    def clean(self):
+        # garantir que o entry escolhido pertence à MESMA competição da pergunta
+        if self.question_id and self.pick_entry_id:
+            if self.pick_entry.competition_id != self.question.competition_id:
+                raise ValidationError("O curso escolhido não pertence a esta competição.")
