@@ -14,7 +14,7 @@ class User(AbstractUser):
         ('admin', 'Admin'),
         ('normal', 'Normal'),
     )
-    Curso = (
+    CURSO = (
         ('soc', 'Sociologia'),
         ('ige', 'Informática e Gestão de Empresas'),
         ('por definir', 'por definir'),
@@ -22,7 +22,7 @@ class User(AbstractUser):
     )
     hierarquia = models.CharField(max_length=50, choices=HIERARQUIA)
     tipo = models.CharField(max_length=50, choices=TIPO, default='normal')
-    curso = models.CharField(max_length=50, choices=Curso,default='por definir')
+    curso = models.CharField(max_length=50, choices=CURSO)
 
 
     def __str__(self): 

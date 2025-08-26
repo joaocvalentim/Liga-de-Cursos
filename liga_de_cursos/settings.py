@@ -53,6 +53,7 @@ INSTALLED_APPS = [
 
     # apps do projeto
     'users',
+    'liga',
 ]
 SITE_ID = 1
 
