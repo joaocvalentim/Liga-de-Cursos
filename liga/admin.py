@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.admin.helpers import ActionForm
 from django.contrib import admin, messages
 from .models import Curso, Competition, CompetitionEntry, Match, MatchVote, MatchStatus, SimpleVote, SimpleVoteQuestion
-from .services import aplicar_resultado, recalcular_classificacao
+from .services import aplicar_resultado, gerar_quartos_de_final, recalcular_classificacao
 
 # Register your models here.
 
@@ -16,20 +16,35 @@ class CursoAdmin(admin.ModelAdmin):
     search_fields = ("name", "short_code")
     ordering = ("name",)    
 
+    
 @admin.register(Competition)
 class CompetitionAdmin(admin.ModelAdmin):
     list_display = ("title", "season_label", "status", "start_date", "end_date")
+    actions = ["action_criar_qf"]
     list_filter = ("status", "season_label")
     search_fields = ("title", "season_label")
     ordering = ("-start_date", "title")
 
+    @admin.action(description="Criar Quartos de Final (1-8, 2-7, 3-6, 4-5)")
+    def action_criar_qf(self, request, queryset):
+        total = 0
+        for comp in queryset:
+            total += gerar_quartos_de_final(comp)
+        if total:
+            messages.success(request, f"Criados {total} confrontos de Quartos de Final.")
+        else:
+            messages.warning(request, "Sem confrontos criados (já existiam QF ou não há 8 equipas).")
+    
+    
 
+# admin.py
 @admin.register(CompetitionEntry)
 class CompetitionEntryAdmin(admin.ModelAdmin):
-    list_display = ("competition", "curso", "pote", "points", "wins", "draws", "losses")
+    list_display = ("competition", "curso", "pote", "points", "wins", "draws", "losses", "manual_rank")
+    list_editable = ("manual_rank",)
     list_filter = ("competition", "pote")
     search_fields = ("competition__season_label", "curso__name", "curso__short_code")
-    ordering = ("competition", "-points", "-pote", "curso__name")
+    ordering = ("competition", "manual_rank", "-points", "-pote", "curso__name")
 
 # -----------------------
 # Admin: confrontos - criar/acabar

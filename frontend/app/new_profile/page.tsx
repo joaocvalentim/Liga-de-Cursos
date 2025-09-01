@@ -24,8 +24,16 @@ import {
 
 
 const RANDOM_USERNAMES = [
-  "cacacaloiras"
-
+  "cacaca loiras ",
+  "pastrano merdoso ",
+  "bebado de merda ",
+  "caro feio ",
+  "dignissimo burro ",
+  "excelentissimo cabrão ",
+  "veteraneco ",
+  "carissimo otário ",
+  "putinha ",
+  "caro conas ",
 ];
 type Option = { value: string; label: string };
 
@@ -36,8 +44,24 @@ const HIERARQUIA_OPTIONS: Option[] = [
 ];
 
 const CURSO_OPTIONS: Option[] = [
-  { value: "ige", label: "Informática e Gestão de Empresas" },
-  { value: "soc", label: "Sociologia"}
+{ value: "ant", label: "Antropologia" },
+{ value: "arq", label: "Arquitetura" },
+{ value: "lcd", label: "Ciência de Dados" },
+{ value: "cpo", label: "Ciências Politicas" },
+{ value: "eco", label: "Economia" },
+{ value: "eti", label: "Engenharia de Telecomunicações e Informática" },
+{ value: "lei", label: "Engenharia Informática" },
+{ value: "fin", label: "Finanças e Contabilidade" },
+{ value: "ges", label: "Gestão" },
+{ value: "grh", label: "Gestão de Recursos Humanos" },
+{ value: "gil", label: "Gestão Industrial e Logística" },
+{ value: "gmk", label: "Gestão de Marketing" },
+{ value: "hmc", label: "História Moderna e Contemporânea" },
+{ value: "ige", label: "Informática e Gestão de Empresas" },
+{ value: "psi", label: "Psicologia" },
+{ value: "soc", label: "Sociologia" },
+{ value: "ss", label: "Serviço Social" },
+{ value: "sintra", label: "Sintra" },
   // adiciona aqui os restantes cursos...
 ];
 

@@ -1,258 +1,576 @@
+// app/fase-grupos/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
+/* ========================= Tipos ========================= */
 type Course = { id: number; name: string; short_code?: string };
-
 type Standing = {
-  id: number;                 // CompetitionEntry id
-  curso: Course | { id: number; name: string; short_code?: string }; // compat
-  course?: Course;            // (se o backend usar "course" em vez de "curso")
-  points?: number;
-  wins?: number;
-  draws?: number;
-  losses?: number;
-  pot?: number | string;
+  id: number; // CompetitionEntry id
+  course: Course | number;
+  course_name?: string;
+  course_code?: string;
+  pote?: number | null;
+  pot?: number | null;
+  wins?: number | null;
+  draws?: number | null;
+  losses?: number | null;
+  points?: number | null;
 };
 
 type Match = {
   id: number;
-  stage: "GROUP" | "QF" | "SF" | "THIRD" | "FINAL";
+  stage: "GROUP" | "QF" | "SF" | "FINAL" | "THIRD";
   status: "SCHEDULED" | "LIVE" | "FT";
-  scheduled_at: string | null;
-  entry1?: Course;
-  entry2?: Course;
-  // nomes alternativos (compat):
-  curso1?: Course;
-  curso2?: Course;
-  entry1_id?: number;
-  entry2_id?: number;
+  scheduled_at?: string;
+  entry1: { id: number; name: string; short_code?: string };
+  entry2: { id: number; name: string; short_code?: string };
+  entry1_id: number;
+  entry2_id: number;
+  winner_entry?: number | null;        // se o backend enviar
+  winner_entry_id?: number | null;     // fallback
 };
 
-const API = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
-const COMP_ID = process.env.NEXT_PUBLIC_COMPETITION_ID || "1";
+type MatchVotesSummary = {
+  match: number;
+  total: number;
+  entry1: { entry_id: number; course: Course; count: number; prob: number }; // prob já vem em ODD
+  entry2: { entry_id: number; course: Course; count: number; prob: number };
+};
 
-export default function GroupStagePage() {
-  const [loading, setLoading] = useState(true);
-  const [standings, setStandings] = useState<Standing[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+type MyBetsPayload = {
+  match_votes: Array<{ match: Match; pick_entry: { id: number } }>;
+  question_votes: any[];
+};
 
+/* ========================= Constantes/Helpers ========================= */
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const COMP_ID = 1;
+
+function asArray<T = any>(raw: any, keys: string[] = []): T[] {
+  if (Array.isArray(raw)) return raw as T[];
+  for (const k of keys) if (raw?.[k] && Array.isArray(raw[k])) return raw[k] as T[];
+  if (raw?.results && Array.isArray(raw.results)) return raw.results as T[];
+  return [];
+}
+function courseFromEntry(c: Standing["course"]): { name: string; code: string } {
+  if (typeof c === "object" && c) {
+    const obj = c as Course;
+    return { name: obj.name, code: obj.short_code ?? "" };
+  }
+  return { name: "", code: "" };
+}
+function fmtHour(iso?: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+const STAGE_LABEL: Record<Match["stage"], string> = {
+  GROUP: "Fase de grupos",
+  QF: "Quartos de final",
+  SF: "Meias-finais",
+  FINAL: "Final",
+  THIRD: "3º/4º",
+};
+const showOdd = (x?: number) => (x ? x.toFixed(2) : "—");
+
+function useAuthFlag() {
+  const [authed, setAuthed] = useState(false);
   useEffect(() => {
-    let alive = true;
+    const read = () => setAuthed(Boolean(localStorage.getItem("access_token")));
+    read();
+    const onAuthChanged = () => read();
+    const onFocus = () => read();
+    window.addEventListener("auth-changed", onAuthChanged);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("auth-changed", onAuthChanged);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
+  return authed;
+}
+function makeHeaders(): Headers {
+  const h = new Headers();
+  h.set("Content-Type", "application/json");
+  const t = localStorage.getItem("access_token");
+  if (t) h.set("Authorization", `Bearer ${t}`);
+  return h;
+}
 
-    const toArray = (json: any) =>
-      Array.isArray(json)
-        ? json
-        : Array.isArray(json?.results)
-        ? json.results
-        : Array.isArray(json?.entries)
-        ? json.entries
-        : Array.isArray(json?.standings)
-        ? json.standings
-        : [];
+/* ========================= Página ========================= */
+export default function FaseDeGruposPage() {
+  const router = useRouter();
+  const isAuthed = useAuthFlag();
 
-    const load = async () => {
+  const [standingsRaw, setStandingsRaw] = useState<any>(null);
+  // matches agendados (para o bloco da direita)
+  const [upcomingRaw, setUpcomingRaw] = useState<any>(null);
+  // todos os matches (para o modal)
+  const [allMatchesRaw, setAllMatchesRaw] = useState<any>(null);
+
+  // summaries para os “próximos confrontos”
+  const [summaries, setSummaries] = useState<Record<number, MatchVotesSummary>>({});
+  // minhas apostas p/destacar a odd escolhida
+  const [myMatchVotes, setMyMatchVotes] = useState<Record<number, number>>({}); // matchId -> entryId
+
+  // modal (detalhes do curso)
+  const [open, setOpen] = useState(false);
+  const [selectedEntryId, setSelectedEntryId] = useState<number | null>(null);
+  const [selectedCourseLabel, setSelectedCourseLabel] = useState<string>("");
+
+  // summaries específicos do modal
+  const [detailSummaries, setDetailSummaries] = useState<Record<number, MatchVotesSummary>>({});
+
+  // dialogs de aposta (igual à Home)
+  const [openConfirmMatch, setOpenConfirmMatch] = useState(false);
+  const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
+  const [currentPick, setCurrentPick] = useState<{ id: number; course: Course } | null>(null);
+  const [openLoginReq, setOpenLoginReq] = useState(false);
+
+  const [loading, setLoading] = useState(true);
+
+  /* -------- initial loads -------- */
+  useEffect(() => {
+    (async () => {
       try {
-        const [sRes, mRes] = await Promise.all([
-          fetch(`${API}/api/competitions/${COMP_ID}/standings/`),
+        const [stRes, upRes, allRes] = await Promise.all([
+          fetch(`${API}/api/competitions/${COMP_ID}/standings/`, { cache: "no-store" }),
           fetch(
-            `${API}/api/competitions/${COMP_ID}/matches/?stage=GROUP&status=SCHEDULED&ordering=scheduled_at&limit=8`
+            `${API}/api/competitions/${COMP_ID}/matches/?status=SCHEDULED&ordering=scheduled_at&limit=6`,
+            { cache: "no-store" }
           ),
+          fetch(`${API}/api/competitions/${COMP_ID}/matches/?ordering=scheduled_at`, {
+            cache: "no-store",
+          }),
         ]);
-        if (!sRes.ok) throw new Error("Falha ao obter classificação");
-        if (!mRes.ok) throw new Error("Falha ao obter jogos");
 
-        const sJson = await sRes.json();
-        const mJson = await mRes.json();
+        const [stJson, upJson, allJson] = await Promise.all([
+          stRes.json(),
+          upRes.json(),
+          allRes.json(),
+        ]);
+        setStandingsRaw(stJson);
+        setUpcomingRaw(upJson);
+        setAllMatchesRaw(allJson);
 
-        if (!alive) return;
-
-        const sArr: Standing[] = toArray(sJson);
-        const mArr: Match[] = toArray(mJson);
-
-        // ordenar por pontos desc; em empate, pote asc (quem tem pote "pior" passa — ajusta se quiseres)
-        sArr.sort((a, b) => {
-          const pa = a.points ?? 0;
-          const pb = b.points ?? 0;
-          if (pb !== pa) return pb - pa;
-          // pote: número mais alto = pior pote (ajusta conforme a tua regra)
-          const potA = toNum(a.pot);
-          const potB = toNum(b.pot);
-          return potA - potB;
+        // summaries para os próximos
+        const list: Match[] = Array.isArray(upJson) ? upJson : upJson?.matches ?? [];
+        const sumPairs = await Promise.all(
+          list.map(async (m) => {
+            try {
+              const r = await fetch(`${API}/api/matches/${m.id}/votes/summary/`, {
+                cache: "no-store",
+              });
+              if (!r.ok) return [m.id, null] as const;
+              return [m.id, (await r.json()) as MatchVotesSummary] as const;
+            } catch {
+              return [m.id, null] as const;
+            }
+          })
+        );
+        const map: Record<number, MatchVotesSummary> = {};
+        sumPairs.forEach(([id, s]) => {
+          if (s) map[id] = s;
         });
-
-        setStandings(sArr);
-        setMatches(mArr);
-      } catch (e: any) {
-        setError(e?.message || "Erro a carregar dados");
+        setSummaries(map);
+      } catch (e) {
+        console.error("Erro a carregar dados:", e);
       } finally {
         setLoading(false);
       }
-    };
-
-    load();
-    return () => {
-      alive = false;
-    };
+    })();
   }, []);
+
+  // minhas apostas (para destacar odds)
+  useEffect(() => {
+    if (!isAuthed) return;
+    (async () => {
+      try {
+        const r = await fetch(`${API}/api/me/bets/?competition=${COMP_ID}`, {
+          headers: makeHeaders(),
+        });
+        if (!r.ok) return;
+        const data: MyBetsPayload = await r.json();
+        const map: Record<number, number> = {};
+        data.match_votes?.forEach((mv) => {
+          map[mv.match.id] = mv.pick_entry.id;
+        });
+        setMyMatchVotes(map);
+      } catch (e) {
+        console.error("my bets fetch error", e);
+      }
+    })();
+  }, [isAuthed]);
+
+  /* -------- derived data -------- */
+  const standings: Standing[] = useMemo(
+    () => asArray<Standing>(standingsRaw, ["entries"]),
+    [standingsRaw]
+  );
+
+  const ordered: Standing[] = useMemo(() => {
+    const arr = [...standings];
+    return arr.sort((a, b) => {
+      const pa = (a.points ?? 0) as number;
+      const pb = (b.points ?? 0) as number;
+      if (pb !== pa) return pb - pa; // pontos desc
+      const poteA = (a.pote ?? a.pot ?? 0) as number;
+      const poteB = (b.pote ?? b.pot ?? 0) as number;
+      if (poteB !== poteA) return poteB - poteA; // desempate: pote maior primeiro
+      return 0;
+    });
+  }, [standings]);
+
+  const upcoming: Match[] = useMemo(
+    () => asArray<Match>(upcomingRaw, ["matches"]).slice(0, 6),
+    [upcomingRaw]
+  );
+
+  const allMatches: Match[] = useMemo(
+    () => asArray<Match>(allMatchesRaw, ["matches"]),
+    [allMatchesRaw]
+  );
+
+  /* -------- modal: open & load summaries for that course -------- */
+  async function openCourseModal(entryId: number, label: string) {
+    setSelectedEntryId(entryId);
+    setSelectedCourseLabel(label);
+    setOpen(true);
+
+    const matchesForCourse = allMatches.filter(
+      (m) => m.entry1_id === entryId || m.entry2_id === entryId
+    );
+
+    const missing = matchesForCourse
+      .map((m) => m.id)
+      .filter((id) => !detailSummaries[id]);
+
+    if (missing.length) {
+      const pairs = await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const r = await fetch(`${API}/api/matches/${id}/votes/summary/`, {
+              cache: "no-store",
+            });
+            if (!r.ok) return [id, null] as const;
+            return [id, (await r.json()) as MatchVotesSummary] as const;
+          } catch {
+            return [id, null] as const;
+          }
+        })
+      );
+      setDetailSummaries((prev) => {
+        const next = { ...prev };
+        pairs.forEach(([id, s]) => {
+          if (s) next[id] = s;
+        });
+        return next;
+      });
+    }
+  }
+
+  /* -------- helpers UI -------- */
+  function codeOf(entry: any) {
+    return entry?.short_code || entry?.code || entry?.course?.short_code || entry?.course?.code || "—";
+  }
+  function winnerCode(m: Match) {
+    const winId = (m.winner_entry ?? m.winner_entry_id) ?? null;
+    if (!winId) return "—";
+    if (winId === m.entry1_id) return codeOf(m.entry1);
+    if (winId === m.entry2_id) return codeOf(m.entry2);
+    return "—";
+  }
+
+  /* -------- submit aposta (igual à Home) -------- */
+  const submitMatchVote = async () => {
+    if (!currentMatch || !currentPick) return;
+    try {
+      const r = await fetch(`${API}/api/matches/${currentMatch.id}/vote/`, {
+        method: "POST",
+        headers: makeHeaders(),
+        body: JSON.stringify({ pick_entry_id: currentPick.id }),
+      });
+      if (r.ok) {
+        setMyMatchVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
+        // refrescar summary desse match
+        const sr = await fetch(`${API}/api/matches/${currentMatch.id}/votes/summary/`);
+        if (sr.ok) {
+          const s = (await sr.json()) as MatchVotesSummary;
+          setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
+        }
+        setOpenConfirmMatch(false);
+      } else if (r.status === 401) {
+        setOpenConfirmMatch(false);
+        setOpenLoginReq(true);
+      }
+    } catch (e) {
+      console.error("match vote error", e);
+    }
+  };
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100">
-        <span className="text-gray-700">A carregar…</span>
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-gray-100">
-        <Card className="w-full max-w-md">
-          <CardHeader>
-            <CardTitle>Erro</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-red-600">{error}</p>
-          </CardContent>
-        </Card>
+      <main className="p-6 max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8">Fase de Grupos</h1>
+        <div className="text-sm text-gray-500">A carregar…</div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-gray-100">
-      <div className="mx-auto max-w-6xl px-4 py-8 space-y-8">
-        <h1 className="text-3xl font-semibold text-gray-900">Fase de Grupos</h1>
+    <main className="p-6 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8">Fase de Grupos</h1>
 
-        <div className="grid gap-8 md:grid-cols-2">
-          {/* Classificação */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Classificação</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-gray-600">
-                    <tr className="border-b">
-                      <th className="py-2 pr-3">Pos</th>
-                      <th className="py-2 pr-3">Curso</th>
-                      <th className="py-2 pr-3">Pts</th>
-                      <th className="py-2 pr-3">J</th>
-                      <th className="py-2 pr-3">V</th>
-                      <th className="py-2 pr-3">E</th>
-                      <th className="py-2 pr-3">D</th>
-                      <th className="py-2">Pote</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {standings.map((row, idx) => {
-                      const c = (row.curso as Course) || row.course;
-                      const v = row.wins ?? 0;
-                      const e = row.draws ?? 0;
-                      const d = row.losses ?? 0;
-                      const jogos = v + e + d;
-                      return (
-                        <tr key={row.id} className="border-b last:border-0">
-                          <td className="py-2 pr-3">{idx + 1}</td>
-                          <td className="py-2 pr-3">
-                            <span className="font-medium">
-                              {c?.short_code ? `${c.short_code}` : c?.name}
-                            </span>
-                            {c?.short_code && (
-                              <span className="text-gray-500"> • {c?.name}</span>
-                            )}
-                          </td>
-                          <td className="py-2 pr-3 font-semibold">{row.points ?? 0}</td>
-                          <td className="py-2 pr-3">{jogos}</td>
-                          <td className="py-2 pr-3">{v}</td>
-                          <td className="py-2 pr-3">{e}</td>
-                          <td className="py-2 pr-3">{d}</td>
-                          <td className="py-2">{row.pot ?? "-"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Classificação */}
+        <section className="rounded-xl border bg-white p-4 shadow-sm">
+          <h2 className="text-xl font-semibold mb-4">Classificação</h2>
 
-          {/* Próximos jogos (fase de grupos) */}
-          <Card className="overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle>Próximos confrontos</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {matches.length === 0 ? (
-                <p className="text-gray-500 text-sm">Sem jogos agendados.</p>
-              ) : (
-                matches.map((m) => {
-                  const a = m.entry1 || m.curso1;
-                  const b = m.entry2 || m.curso2;
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="py-2 px-3">Pos</th>
+                  <th className="py-2 px-3">Curso</th>
+                  <th className="py-2 px-3">Pote</th>
+                  <th className="py-2 px-3">V</th>
+                  <th className="py-2 px-3">E</th>
+                  <th className="py-2 px-3">D</th>
+                  <th className="py-2 px-3">Pts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordered.map((e, idx) => {
+                  const { name, code } = courseFromEntry(e.course);
+                  const divider = idx === 8;
+                  const label = `${code || e.course_code} • ${name || e.course_name}`;
                   return (
-                    <div
-                      key={m.id}
-                      className="flex items-center justify-between rounded-md border p-3 bg-white"
+                    <tr
+                      key={e.id ?? `${code}-${idx}`}
+                      className={`border-t ${
+                        divider ? "border-t-2 border-dashed border-red-500" : "border-t"
+                      } hover:bg-gray-50 cursor-pointer`}
+                      onClick={() => openCourseModal(e.id, label)}
                     >
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">
-                          {labelTeam(a)} <span className="text-gray-400">vs</span> {labelTeam(b)}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(m.scheduled_at)}
-                        </div>
+                      <td className="py-2 px-3">{idx + 1}</td>
+                      <td className="py-2 px-3">
+                        <span className="font-semibold">{code || e.course_code}</span>
+                        <span className="text-gray-500"> • {name || e.course_name}</span>
+                      </td>
+                      <td className="py-2 px-3">{(e.pote ?? e.pot ?? "-") as any}</td>
+                      <td className="py-2 px-3">{e.wins ?? 0}</td>
+                      <td className="py-2 px-3">{e.draws ?? 0}</td>
+                      <td className="py-2 px-3">{e.losses ?? 0}</td>
+                      <td className="py-2 px-3 font-semibold">{e.points ?? 0}</td>
+                    </tr>
+                  );
+                })}
+                {ordered.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="py-6 text-center text-gray-500">
+                      Sem dados de classificação.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Próximos confrontos (COM APOSTA) */}
+        <section className="rounded-xl border bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Próximos confrontos</h2>
+            <Link
+              href="/confrontos?tipo=gerais"
+              className="text-sm font-medium text-gray-700 hover:underline"
+            >
+              Ver mais
+            </Link>
+          </div>
+
+          {upcoming.length === 0 ? (
+            <p className="text-sm text-gray-500">Sem confrontos agendados.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {upcoming.map((m) => {
+                const s = summaries[m.id];
+                const mine1 = myMatchVotes[m.id] === m.entry1_id;
+                const mine2 = myMatchVotes[m.id] === m.entry2_id;
+
+                return (
+                  <div key={m.id} className="rounded-lg border p-3">
+                    <div className="mb-2 text-xs text-gray-500 text-center">
+                      {STAGE_LABEL[m.stage] ?? m.stage}
+                    </div>
+                    <div className="mb-3 flex items-center justify-center gap-3 text-lg font-semibold">
+                      <span>{m.entry1.short_code}</span>
+                      <span className="text-gray-400">— {fmtHour(m.scheduled_at)} —</span>
+                      <span>{m.entry2.short_code}</span>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => {
+                          if (!isAuthed) return setOpenLoginReq(true);
+                          setCurrentMatch(m);
+                          setCurrentPick({ id: m.entry1_id, course: m.entry1 });
+                          setOpenConfirmMatch(true);
+                        }}
+                        className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
+                          mine1 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+                        }`}
+                      >
+                        <div className="text-lg font-semibold">{showOdd(s?.entry1?.prob)}</div>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (!isAuthed) return setOpenLoginReq(true);
+                          setCurrentMatch(m);
+                          setCurrentPick({ id: m.entry2_id, course: m.entry2 });
+                          setOpenConfirmMatch(true);
+                        }}
+                        className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
+                          mine2 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+                        }`}
+                      >
+                        <div className="text-lg font-semibold">{showOdd(s?.entry2?.prob)}</div>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {/* ========================= MODAL DETALHES DO CURSO ========================= */}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{selectedCourseLabel}</DialogTitle>
+          </DialogHeader>
+
+          <div className="max-h-[70vh] overflow-y-auto space-y-6">
+            {/* Terminados */}
+            <section>
+              <h3 className="mb-2 text-sm font-medium text-gray-600">Confrontos Terminados</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {asArray<Match>(allMatchesRaw, ["matches"])
+                  .filter((m) => (m.entry1_id === selectedEntryId || m.entry2_id === selectedEntryId) && m.status === "FT")
+                  .map((m) => (
+                    <div key={m.id} className="rounded-lg border px-3 py-2 text-sm flex items-center justify-between">
+                      <div className="text-xs text-gray-500">{STAGE_LABEL[m.stage] ?? m.stage}</div>
+                      <div className="font-semibold">
+                        {m.entry1.short_code} <span className="text-gray-400">—</span> {m.entry2.short_code}
                       </div>
-                      <div className="flex gap-2 shrink-0">
-                        <Button
-                          variant="outline"
-                          onClick={() => router.push(`/apostas?match=${m.id}`)}
-                        >
-                          Apostar
-                        </Button>
-                        <Button
-                          variant="secondary"
-                          onClick={() => router.push(`/confronto/${m.id}`)}
-                        >
-                          Ver odds
-                        </Button>
+                      <div>
+                        Vencedor: <span className="font-semibold">{winnerCode(m)}</span>
                       </div>
                     </div>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                  ))}
+              </div>
+            </section>
+
+            {/* Agendados (apenas info + odds) */}
+            <section>
+                <h3 className="mb-2 text-sm font-medium text-gray-600">
+                  Confrontos Agendados -{' '}
+                  <Link
+                    href={`/confrontos?tipo=gerais&curso=${selectedEntryId}`}
+                    className="text-sm font-medium text-gray-700 hover:underline "
+                  >
+                    Apostar
+                  </Link>
+                </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {asArray<Match>(allMatchesRaw, ["matches"])
+                  .filter((m) => (m.entry1_id === selectedEntryId || m.entry2_id === selectedEntryId) && m.status !== "FT")
+                  .map((m) => {
+                    const s = detailSummaries[m.id];
+                    return (
+                      <div key={m.id} className="rounded-lg border p-3">
+                        <div className="mb-1 text-xs text-gray-500 text-center">
+                          {STAGE_LABEL[m.stage] ?? m.stage}
+                        </div>
+                        <div className="mb-2 flex items-center justify-between text-sm">
+                          <div className="font-semibold">{m.entry1.short_code}</div>
+                          <div className="text-gray-500">{fmtHour(m.scheduled_at)}</div>
+                          <div className="font-semibold">{m.entry2.short_code}</div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-xl bg-gray-100 px-4 py-3 text-center">
+                            <div className="text-lg font-semibold">{showOdd(s?.entry1?.prob)}</div>
+                          </div>
+                          <div className="rounded-xl bg-gray-100 px-4 py-3 text-center">
+                            <div className="text-lg font-semibold">{showOdd(s?.entry2?.prob)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ========================= Dialogs de aposta / login ========================= */}
+      <Dialog open={openConfirmMatch} onOpenChange={setOpenConfirmMatch}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirmar aposta</DialogTitle>
+            <DialogDescription>
+              {currentPick?.course
+                ? `Pretendes apostar no curso ${currentPick.course.name}?`
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenConfirmMatch(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={submitMatchVote}>Sim, apostar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openLoginReq} onOpenChange={setOpenLoginReq}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Para apostar é preciso ter uma conta</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenLoginReq(false)}>
+              Voltar atrás
+            </Button>
+            <Button
+              onClick={() => {
+                setOpenLoginReq(false);
+                router.push("/login");
+              }}
+            >
+              Login
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
-}
-
-/* helpers */
-function toNum(v: unknown): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function labelTeam(c?: Course) {
-  if (!c) return "TBD";
-  return c.short_code ? `${c.short_code}` : c.name;
-}
-
-function formatDateTime(iso: string | null) {
-  if (!iso) return "Data a definir";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "Data a definir";
-  return d.toLocaleString("pt-PT", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

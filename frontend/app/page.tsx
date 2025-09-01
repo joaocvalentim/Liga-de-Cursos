@@ -6,16 +6,30 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 
 /** Tipos (espelham os serializers do backend) */
 type Course = { id: number; name: string; short_code: string };
 type StandingEntry = { id: number; course: Course };
-type Question = { id: number; title?: string; question?: string; text?: string };
+type Question = {
+  id: number;
+  title?: string;
+  question?: string;
+  text?: string;
+};
 type QuestionResults = {
   total: number;
   results: Array<{ entry_id: number; count: number; prob: number }>; // prob = percentagem [0..1]
@@ -48,7 +62,9 @@ const COMPETITION_ID = 1;
 
 function fmtHour(iso: string) {
   const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${String(d.getHours()).padStart(2, "0")}:${String(
+    d.getMinutes()
+  ).padStart(2, "0")}`;
 }
 function useAuthFlag() {
   const [authed, setAuthed] = useState(false);
@@ -80,9 +96,13 @@ export default function HomePage() {
 
   const [entries, setEntries] = useState<StandingEntry[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [questionResults, setQuestionResults] = useState<Record<number, QuestionResults>>({});
+  const [questionResults, setQuestionResults] = useState<
+    Record<number, QuestionResults>
+  >({});
   const [matches, setMatches] = useState<Match[]>([]);
-  const [matchSummaries, setMatchSummaries] = useState<Record<number, MatchVotesSummary>>({});
+  const [matchSummaries, setMatchSummaries] = useState<
+    Record<number, MatchVotesSummary>
+  >({});
   const [myMatchVotes, setMyMatchVotes] = useState<Record<number, number>>({}); // matchId -> entryId
 
   // Dialogs
@@ -92,7 +112,10 @@ export default function HomePage() {
 
   const [openConfirmMatch, setOpenConfirmMatch] = useState(false);
   const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
-  const [currentPick, setCurrentPick] = useState<{ id: number; course: Course } | null>(null);
+  const [currentPick, setCurrentPick] = useState<{
+    id: number;
+    course: Course;
+  } | null>(null);
 
   const [openLoginReq, setOpenLoginReq] = useState(false);
 
@@ -100,9 +123,13 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/api/competitions/${COMPETITION_ID}/standings/`);
+        const r = await fetch(
+          `${API}/api/competitions/${COMPETITION_ID}/standings/`
+        );
         const data = await r.json();
-        const list: StandingEntry[] = Array.isArray(data) ? data : (data?.entries ?? []);
+        const list: StandingEntry[] = Array.isArray(data)
+          ? data
+          : data?.entries ?? [];
         setEntries(list);
       } catch (e) {
         console.error("standings fetch error", e);
@@ -114,9 +141,11 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
-        const rq = await fetch(`${API}/api/competitions/${COMPETITION_ID}/questions/`);
+        const rq = await fetch(
+          `${API}/api/competitions/${COMPETITION_ID}/questions/`
+        );
         const raw = await rq.json();
-        const qs: Question[] = Array.isArray(raw) ? raw : (raw?.questions ?? []);
+        const qs: Question[] = Array.isArray(raw) ? raw : raw?.questions ?? [];
         setQuestions(qs);
 
         const results = await Promise.all(
@@ -143,7 +172,7 @@ export default function HomePage() {
           `${API}/api/competitions/${COMPETITION_ID}/matches/?status=SCHEDULED&ordering=scheduled_at&limit=6`
         );
         const data = await r.json();
-        const list: Match[] = Array.isArray(data) ? data : (data?.matches ?? []);
+        const list: Match[] = Array.isArray(data) ? data : data?.matches ?? [];
         setMatches(list);
 
         const summaries = await Promise.all(
@@ -167,9 +196,12 @@ export default function HomePage() {
     if (!isAuthed) return;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/me/bets/?competition=${COMPETITION_ID}`, {
-          headers: makeHeaders(),
-        });
+        const r = await fetch(
+          `${API}/api/me/bets/?competition=${COMPETITION_ID}`,
+          {
+            headers: makeHeaders(),
+          }
+        );
         if (!r.ok) return;
         const data: MyBetsPayload = await r.json();
         const map: Record<number, number> = {};
@@ -190,13 +222,26 @@ export default function HomePage() {
       const total = res?.total ?? 0;
       return { q, total };
     });
-    return tuples.sort((a, b) => b.total - a.total).slice(0, 3).map((t) => t.q);
+    return tuples
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3)
+      .map((t) => t.q);
   }, [questions, questionResults]);
 
+  // mostra 1 pergunta de cada vez
+  const [qIndex, setQIndex] = useState(0);
+
+  // sempre que o conjunto de perguntas mudar, mantém o índice válido
+  useEffect(() => {
+    if (qIndex >= topQuestions.length) setQIndex(0);
+  }, [topQuestions, qIndex]);
+
   // helpers
-  const titleOf = (q: Question) => q.title ?? q.text ?? q.question ?? "Pergunta";
+  const titleOf = (q: Question) =>
+    q.title ?? q.text ?? q.question ?? "Pergunta";
   const getOptionsFromResults = (res?: QuestionResults) => {
-    if (!res) return [] as Array<{ entry_id: number; prob: number; course?: Course }>;
+    if (!res)
+      return [] as Array<{ entry_id: number; prob: number; course?: Course }>;
     return res.results
       .map((r) => ({
         entry_id: r.entry_id,
@@ -211,13 +256,18 @@ export default function HomePage() {
   const submitSimpleVote = async () => {
     if (!currentQuestion || !pickedEntry) return;
     try {
-      const r = await fetch(`${API}/api/questions/${currentQuestion.id}/vote/`, {
-        method: "POST",
-        headers: makeHeaders(),
-        body: JSON.stringify({ pick_entry_id: pickedEntry }),
-      });
+      const r = await fetch(
+        `${API}/api/questions/${currentQuestion.id}/vote/`,
+        {
+          method: "POST",
+          headers: makeHeaders(),
+          body: JSON.stringify({ pick_entry_id: pickedEntry }),
+        }
+      );
       if (r.ok) {
-        const rr = await fetch(`${API}/api/questions/${currentQuestion.id}/results/`);
+        const rr = await fetch(
+          `${API}/api/questions/${currentQuestion.id}/results/`
+        );
         const res = await rr.json();
         setQuestionResults((prev) => ({ ...prev, [currentQuestion.id]: res }));
         setOpenSimpleDialog(false);
@@ -239,8 +289,13 @@ export default function HomePage() {
         body: JSON.stringify({ pick_entry_id: currentPick.id }),
       });
       if (r.ok) {
-        setMyMatchVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
-        const sr = await fetch(`${API}/api/matches/${currentMatch.id}/votes/summary/`);
+        setMyMatchVotes((prev) => ({
+          ...prev,
+          [currentMatch.id]: currentPick.id,
+        }));
+        const sr = await fetch(
+          `${API}/api/matches/${currentMatch.id}/votes/summary/`
+        );
         const s = await sr.json();
         setMatchSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
         setOpenConfirmMatch(false);
@@ -255,62 +310,110 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">
-      {/* Apostas gerais */}
       <section className="mb-10">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Apostas gerais</h2>
-          <Link href="/apostas?tipo=gerais" className="text-sm font-medium text-gray-700 hover:underline">
-            Ver mais
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {topQuestions.map((q) => {
+        {topQuestions.length === 0 ? (
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="text-center text-lg font-semibold">
+                Apostas gerais
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-gray-500 text-center">
+                Sem perguntas ativas.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          (() => {
+            const q = topQuestions[qIndex];
             const res = questionResults[q.id];
             const top3 = getOptionsFromResults(res).slice(0, 3);
+            const title = titleOf(q);
+
             return (
-              <Card key={q.id} className="rounded-2xl">
-                <CardHeader>
-                  <CardTitle className="text-center text-lg font-semibold">{titleOf(q)}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {(!res || res.total === 0) && (
-                    <p className="mb-4 text-sm text-gray-500">Sem votos ainda.</p>
-                  )}
+              <div className="mx-auto max-w-xl">
+                {/* wrapper relativo p/ setas absolutas */}
+                <div className="relative">
+                  <Card className="rounded-2xl">
+                    <CardHeader className="pt-6">
+                      <CardTitle className="text-center text-lg font-semibold">
+                        {title}
+                      </CardTitle>
+                    </CardHeader>
 
-                  {res && res.total > 0 && (
-                    <div className="mb-4 space-y-2">
-                      {top3.map((opt) => (
-                        <div
-                          key={opt.entry_id}
-                          className="flex items-center justify-between rounded-xl bg-gray-100 px-3 py-2"
-                        >
-                          <span className="text-sm">
-                            {opt.course?.name ?? opt.course?.short_code ?? `#${opt.entry_id}`}
-                          </span>
-                          <span className="font-semibold">{(opt.prob * 100).toFixed(0)}%</span>
+                    <CardContent>
+                      {(!res || res.total === 0) && (
+                        <p className="mb-4 text-sm text-gray-500 text-center">
+                          Sem votos.
+                        </p>
+                      )}
+
+                      {res && res.total > 0 && (
+                        <div className="mb-4 flex flex-col items-center gap-2">
+                          {top3.map((opt) => (
+                            <div
+                              key={opt.entry_id}
+                              className="flex items-center justify-between w-64 max-w-full rounded-xl bg-gray-100 px-4 py-2"
+                            >
+                              <span className="text-sm">
+                                {opt.course?.short_code ??
+                                  opt.course?.name ??
+                                  `#${opt.entry_id}`}
+                              </span>
+                              <span className="font-semibold">
+                                {(opt.prob * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      )}
 
-                  <div className="flex justify-center">
-                    <Button
-                      onClick={() => {
-                        if (!isAuthed) return setOpenLoginReq(true);
-                        setCurrentQuestion(q);
-                        setPickedEntry(null);
-                        setOpenSimpleDialog(true);
-                      }}
+                      <div className="flex justify-center">
+                        <Button
+                          onClick={() => {
+                            if (!isAuthed) return setOpenLoginReq(true);
+                            setCurrentQuestion(q);
+                            setPickedEntry(null);
+                            setOpenSimpleDialog(true);
+                          }}
+                        >
+                          Votar
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* seta anterior (pretinha, pequena, sem moldura) */}
+                  <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-between px-3">
+                    <button
+                      aria-label="Anterior"
+                      onClick={() =>
+                        setQIndex(
+                          (i) =>
+                            (i - 1 + topQuestions.length) % topQuestions.length
+                        )
+                      }
+                      className="pointer-events-auto grid h-9 w-9 place-items-center rounded-full bg-black text-white leading-none shadow hover:opacity-90 focus:outline-none"
                     >
-                      Votar
-                    </Button>
+                      ‹
+                    </button>
+
+                    <button
+                      aria-label="Seguinte"
+                      onClick={() =>
+                        setQIndex((i) => (i + 1) % topQuestions.length)
+                      }
+                      className="pointer-events-auto grid h-9 w-9 place-items-center rounded-full bg-black text-white leading-none shadow hover:opacity-90 focus:outline-none"
+                    >
+                      ›
+                    </button>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             );
-          })}
-        </div>
+          })()
+        )}
       </section>
 
       {/* Próximos confrontos */}
@@ -318,7 +421,7 @@ export default function HomePage() {
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold">Próximos confrontos</h2>
           <Link
-            href="/apostas?tipo=confrontos&ordenar=inicio"
+            href="/confrontos?tipo=confrontos&ordenar=inicio"
             className="text-sm font-medium text-gray-700 hover:underline"
           >
             Ver mais
@@ -333,12 +436,14 @@ export default function HomePage() {
             return (
               <Card key={m.id} className="rounded-2xl">
                 <CardContent className="pt-6">
-                  <p className="mb-3 text-xs text-gray-500">
+                  <p className="mb-3 text-xs text-gray-500 text-center">
                     {m.stage === "GROUP" ? "Fase de grupos" : m.stage}
                   </p>
                   <div className="mb-6 flex items-center justify-center gap-3 text-lg font-semibold">
                     <span>{m.entry1.short_code}</span>
-                    <span className="text-gray-400">— {fmtHour(m.scheduled_at)} —</span>
+                    <span className="text-gray-400">
+                      — {fmtHour(m.scheduled_at)} —
+                    </span>
                     <span>{m.entry2.short_code}</span>
                   </div>
 
@@ -351,26 +456,34 @@ export default function HomePage() {
                         setOpenConfirmMatch(true);
                       }}
                       className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
-                        isMine1 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+                        isMine1
+                          ? "bg-black text-white"
+                          : "bg-gray-100 hover:bg-gray-200"
                       }`}
                     >
-                    <div className="text-sm">{m.entry1.name}</div>
-                      <div className="text-lg font-semibold">{showOdd(s?.entry1?.prob)}</div>
+                      <div className="text-sm">{m.entry1.name}</div>
+                      <div className="text-lg font-semibold">
+                        {showOdd(s?.entry1?.prob)}
+                      </div>
                     </button>
 
                     <button
                       onClick={() => {
                         if (!isAuthed) return setOpenLoginReq(true);
                         setCurrentMatch(m);
-                        setCurrentPick({ id: m.entry2_id, course: m.entry2  });
+                        setCurrentPick({ id: m.entry2_id, course: m.entry2 });
                         setOpenConfirmMatch(true);
                       }}
                       className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
-                        isMine2 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+                        isMine2
+                          ? "bg-black text-white"
+                          : "bg-gray-100 hover:bg-gray-200"
                       }`}
                     >
                       <div className="text-sm">{m.entry2.name}</div>
-                      <div className="text-lg font-semibold">{showOdd(s?.entry2?.prob)}</div>
+                      <div className="text-lg font-semibold">
+                        {showOdd(s?.entry2?.prob)}
+                      </div>
                     </button>
                   </div>
                 </CardContent>
@@ -384,7 +497,9 @@ export default function HomePage() {
       <Dialog open={openSimpleDialog} onOpenChange={setOpenSimpleDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{currentQuestion ? titleOf(currentQuestion) : ""}</DialogTitle>
+            <DialogTitle>
+              {currentQuestion ? titleOf(currentQuestion) : ""}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-sm text-gray-600">Escolhe o curso</p>
@@ -402,7 +517,10 @@ export default function HomePage() {
             </Select>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenSimpleDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setOpenSimpleDialog(false)}
+            >
               Cancelar
             </Button>
             <Button onClick={submitSimpleVote} disabled={!pickedEntry}>
@@ -417,11 +535,16 @@ export default function HomePage() {
           <DialogHeader>
             <DialogTitle>Confirmar aposta</DialogTitle>
             <DialogDescription>
-              {currentPick?.course ? `Pretendes apostar no curso ${currentPick.course.name}?` : null}
+              {currentPick?.course
+                ? `Pretendes apostar no curso ${currentPick.course.name}?`
+                : null}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenConfirmMatch(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setOpenConfirmMatch(false)}
+            >
               Cancelar
             </Button>
             <Button onClick={submitMatchVote}>Sim, apostar</Button>

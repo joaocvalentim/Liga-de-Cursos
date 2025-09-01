@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from datetime import datetime, timezone
+from django.db.models import F
 
 from .models import Competition, CompetitionEntry, Match, MatchStage, MatchStatus, MatchVote, SimpleVote, SimpleVoteQuestion
 from .serializers import MatchVoteSerializer, SimpleVoteInputSerializer, SimpleVoteSerializer, StandingEntrySerializer, MatchSerializer, MatchVoteInputSerializer
@@ -26,12 +27,20 @@ def standings_view(request, competition_id: int):
     except Competition.DoesNotExist:
         return Response({"detail": "Competition not found."}, status=status.HTTP_404_NOT_FOUND)
 
+    # views.py -> standings_view
     qs = (
-        CompetitionEntry.objects
-        .filter(competition=comp)
-        .select_related("curso")
-        .order_by("-points", "-pote", "curso__name")
+    CompetitionEntry.objects
+    .filter(competition=comp)
+    .select_related("curso")
+    .order_by(
+        F("manual_rank").asc(nulls_last=True),   # manual primeiro (nulls no fim)
+        "-points",
+        "-pote",
+        "curso__name",
     )
+)
+
+    
     data = StandingEntrySerializer(qs, many=True).data
     return Response({"competition": comp.id, "entries": data})
 
