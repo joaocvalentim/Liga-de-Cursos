@@ -55,6 +55,9 @@ class CompetitionEntry(TimeStampedModel):
     draws = models.PositiveSmallIntegerField(default=0)
     losses = models.PositiveSmallIntegerField(default=0)
     
+    manual_rank = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Se preenchido, força a posição (1=1º).")
+
+    
     class Meta:
         unique_together = ("competition", "curso")
         indexes = [models.Index(fields=["competition", "pote"])]

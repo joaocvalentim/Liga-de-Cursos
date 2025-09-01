@@ -1,3 +1,4 @@
+
 """
 Django settings for liga_de_cursos project.
 
@@ -11,7 +12,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from datetime import timedelta
+import os
 from pathlib import Path
+
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,10 +28,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-6)7-zxjpzdk+u9ikb_)ynoobr%-hvsfr9b9nhvrx4&n4w4-d1g'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+#DEBUG = True
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    "api.betpraxis.pt",
+    os.getenv("RAILWAY_PUBLIC_DOMAIN", ""),  # domínio temporário da Railway
+]
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://betpraxis.pt",
+    "https://www.betpraxis.pt",
+    "https://api.betpraxis.pt",
+    f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN','')}",
+]
 
 # Application definition
 
@@ -54,6 +68,10 @@ INSTALLED_APPS = [
     # apps do projeto
     'users',
     'liga',
+    
+    #deploy
+    "corsheaders",
+    "django.contrib.staticfiles",
 ]
 SITE_ID = 1
 
@@ -66,13 +84,18 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-
-ACCOUNT_LOGIN_METHODS = {'email'}
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_SIGNUP_FIELDS = ['email']  # sem 'username'
+# --- dj-rest-auth / django-allauth recommended settings ---
+# Define os campos obrigatórios para signup
+ACCOUNT_SIGNUP_FIELDS = {
+    'username': {'required': True},
+    'email': {'required': True},
+}
+# Define os métodos de login compatíveis com os campos obrigatórios
+ACCOUNT_LOGIN_METHODS = ['username', 'email']
+#ACCOUNT_EMAIL_REQUIRED = True
+#ACCOUNT_SIGNUP_FIELDS = ['email']  # sem 'username'
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend" # para nao enviar email de confirmacao
 ACCOUNT_EMAIL_VERIFICATION = "none"
-
 # Configurações do django REST Framework - criar apis, definir autenticacao e permissões
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -92,7 +115,7 @@ REST_AUTH = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=5),      # Tempo do token principal - usado para autenticar requests
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),      # Tempo do token principal - usado para autenticar requests
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),        # Tempo do token de refresh - se já tiver expirado o access token, pede um novo automaticamente durante 7 dias  
     'ROTATE_REFRESH_TOKENS': True,                      # Gera novo refresh a cada uso
     'BLACKLIST_AFTER_ROTATION': True,                   # Invalida refresh antigo
@@ -106,6 +129,8 @@ REST_AUTH_TOKEN_MODEL = None  # (em algumas versões: TOKEN_MODEL = None)
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',           # <-- vírgula aqui!
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # <— depois da SecurityMiddleware
+    "corsheaders.middleware.CorsMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
     'allauth.account.middleware.AccountMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -115,8 +140,12 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000']
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    #'http://localhost:3000'
+    'https://betpraxis.pt',
+    'https://www.betpraxis.pt',
+]
 
 ROOT_URLCONF = 'liga_de_cursos.urls'
 
@@ -142,12 +171,23 @@ WSGI_APPLICATION = 'liga_de_cursos.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    #'default': {
+     #   'ENGINE': 'django.db.backends.sqlite3',
+      #  'NAME': BASE_DIR / 'db.sqlite3',
+    #}
+    'default': dj_database_url.config(
+        env='DATABASE_URL',
+        conn_max_age=600,
+        ssl_require=True
+    )
 }
 
+# Django 5: storage do Whitenoise
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -184,6 +224,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
