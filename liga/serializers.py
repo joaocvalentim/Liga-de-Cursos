@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CompetitionEntry, Match
+from .models import CompetitionEntry, Match, MatchVote, SimpleVote
 
 # Curso compacto para mostrar nome/código
 class CursoSlimSerializer(serializers.Serializer):
@@ -45,3 +45,33 @@ class SimpleVoteQuestionSerializer(serializers.Serializer):
 # Body para votar numa pergunta
 class SimpleVoteInputSerializer(serializers.Serializer):
     pick_entry_id = serializers.IntegerField()
+
+
+class CompetitionEntrySlimSerializer(serializers.ModelSerializer):
+    course = CursoSlimSerializer(source="*", read_only=True)  # usa entry.curso
+
+    class Meta:
+        model = CompetitionEntry
+        fields = ["id", "course"]
+
+# Voto num confronto
+class MatchVoteSerializer(serializers.ModelSerializer):
+    match = MatchSerializer(read_only=True)
+    pick_entry = CompetitionEntrySlimSerializer(read_only=True)
+
+    class Meta:
+        model = MatchVote
+        fields = ["id", "match", "pick_entry"]
+
+# Voto numa pergunta “geral”
+class SimpleVoteSerializer(serializers.ModelSerializer):
+    question = serializers.SerializerMethodField()
+    pick_entry = CompetitionEntrySlimSerializer(read_only=True)
+
+    def get_question(self, obj):
+        q = obj.question
+        return {"id": q.id, "text": q.text, "competition": q.competition_id}
+
+    class Meta:
+        model = SimpleVote
+        fields = ["id", "question", "pick_entry"]

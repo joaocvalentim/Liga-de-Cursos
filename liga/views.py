@@ -12,7 +12,7 @@ from rest_framework.throttling import UserRateThrottle
 from datetime import datetime, timezone
 
 from .models import Competition, CompetitionEntry, Match, MatchStage, MatchStatus, MatchVote, SimpleVote, SimpleVoteQuestion
-from .serializers import SimpleVoteInputSerializer, StandingEntrySerializer, MatchSerializer, MatchVoteInputSerializer
+from .serializers import MatchVoteSerializer, SimpleVoteInputSerializer, SimpleVoteSerializer, StandingEntrySerializer, MatchSerializer, MatchVoteInputSerializer
 
 
 # -------------------------
@@ -324,3 +324,36 @@ def bracket_view(request, competition_id: int):
         }
     }
     return Response(payload)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_bets_view(request):
+    """
+    Devolve todas as apostas do utilizador autenticado.
+    Filtro opcional por competição: ?competition=<id>
+    """
+    competition_id = request.query_params.get("competition")
+
+    match_votes = (
+        MatchVote.objects
+        .filter(user=request.user)
+        .select_related(
+            "match__curso1__curso",
+            "match__curso2__curso",
+            "pick_entry__curso",
+        )
+    )
+    simple_votes = (
+        SimpleVote.objects
+        .filter(user=request.user)
+        .select_related("question", "pick_entry__curso")
+    )
+
+    if competition_id:
+        match_votes = match_votes.filter(match__competition_id=competition_id)
+        simple_votes = simple_votes.filter(question__competition_id=competition_id)
+
+    return Response({
+        "match_votes": MatchVoteSerializer(match_votes, many=True).data,
+        "question_votes": SimpleVoteSerializer(simple_votes, many=True).data,
+    })
