@@ -122,9 +122,11 @@ export default function EditProfilePage() {
       const data = await response.json();
       if (data.access) {
       localStorage.setItem("access_token", data.access);
+      localStorage.setItem("refresh_token", data.refresh);
+      window.dispatchEvent(new Event("auth-changed"));
     }
 
-      router.push("/dashboard");
+      router.push("/");
     } catch (error) {
       alert("Erro ao editar: Verifique os dados ou tente novamente mais tarde");
     }

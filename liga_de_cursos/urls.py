@@ -34,5 +34,6 @@ urlpatterns = [
     
     # URLs do app de utilizadores
     path('api/', include('users.urls')),  # isto liga o user/
+    path('api/', include('liga.urls')), 
 
 ]

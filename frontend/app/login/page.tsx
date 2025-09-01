@@ -27,7 +27,9 @@ export default function LoginPage() {
             }  
             const data = await response.json(); // Parse the JSON response - guardar access token
             localStorage.setItem('access_token', data.access); // Store the access token in local localStorage - usar noutras paginas
-            router.push('/dashboard'); // Redirect to the home page after successful login  
+            localStorage.setItem("refresh_token", data.refresh);
+            window.dispatchEvent(new Event("auth-changed"));
+            router.push('/'); // Redirect to the home page after successful login  
         } catch (error) {
             alert('Erro ao fazer login: Credenciais erradas ou erro no servidor'); // Show an error message if the login fails 
         }
