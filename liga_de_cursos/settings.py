@@ -69,10 +69,7 @@ INSTALLED_APPS = [
     'users',
     'liga',
     
-    #deploy
-    "corsheaders",
-    "django.contrib.staticfiles",
-]
+    ]
 SITE_ID = 1
 
 
@@ -130,7 +127,6 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',           # <-- vírgula aqui!
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # <— depois da SecurityMiddleware
-    "corsheaders.middleware.CorsMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
     'allauth.account.middleware.AccountMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -169,18 +165,23 @@ WSGI_APPLICATION = 'liga_de_cursos.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
-DATABASES = {
-    #'default': {
-     #   'ENGINE': 'django.db.backends.sqlite3',
-      #  'NAME': BASE_DIR / 'db.sqlite3',
-    #}
-    'default': dj_database_url.config(
-        env='DATABASE_URL',
-        conn_max_age=600,
-        ssl_require=True
-    )
-}
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=True,   # ok na Railway
+        )
+    }
+else:
+    # fallback local: SQLite
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 # Django 5: storage do Whitenoise
 STORAGES = {
