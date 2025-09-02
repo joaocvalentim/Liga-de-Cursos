@@ -100,36 +100,40 @@ export default function Header() {
             onClick={() => setMobileOpen((v) => !v)}
             aria-expanded={mobileOpen}
             aria-controls="mobile-menu"
+            style={{ minHeight: 48 }}
           >
             <Image
               src="/logo.png"
               alt="betpraxis"
-              width={120}
-              height={32}
+              width={160}
+              height={40}
               priority
-              sizes="(max-width: 640px) 120px, 160px"
-              className="h-8 w-auto"
+              sizes="(max-width: 640px) 160px, 200px"
+              className="w-auto"
+              style={{ display: 'block', margin: '0 auto' }}
             />
 
             <svg
-              className={cx("h-4 w-4 transition", mobileOpen && "rotate-180")}
+              className={cx("h-5 w-5 transition", mobileOpen && "rotate-180")}
               viewBox="0 0 20 20"
               fill="currentColor"
+              style={{ marginLeft: 4 }}
             >
               <path d="M5.23 7.21a.75.75 0 011.06.02L10 11.126l3.71-3.896a.75.75 0 111.08 1.04l-4.24 4.46a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" />
             </svg>
           </button>
 
           {/* Desktop: logo é link normal */}
-          <Link href="/" className="h-25 hidden sm:block hover:opacity-80">
+          <Link href="/" className="hidden sm:flex items-center hover:opacity-80" style={{ minHeight: 48 }}>
             <Image
               src="/logo.png"
               alt="betpraxis"
-              width={140}
-              height={36}
+              width={180}
+              height={48}
               priority
-              sizes="(max-width: 640px) 120px, 160px"
-              className="h-9 w-auto"
+              sizes="(max-width: 640px) 160px, 200px"
+              className="w-auto"
+              style={{ display: 'block', margin: '0 auto' }}
             />
           </Link>
 

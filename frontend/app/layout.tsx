@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Liga de Cursos",
+  title: "Betpraxis",
 };
 
 export default function RootLayout({
