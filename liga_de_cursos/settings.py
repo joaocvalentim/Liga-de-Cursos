@@ -36,11 +36,15 @@ RAILWAY_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 
 ALLOWED_HOSTS = [h for h in [
     "api.betpraxis.pt",
-    RAILWAY_DOMAIN,   # ex: web-production-xxx.up.railway.app
+    "betpraxis.pt",
+    "www.betpraxis.pt",
+    RAILWAY_DOMAIN,  # ex: web-production-xxx.up.railway.app
 ] if h]
 
 CSRF_TRUSTED_ORIGINS = [o for o in [
     "https://api.betpraxis.pt",
+    "https://betpraxis.pt",
+    "https://www.betpraxis.pt",
     f"https://{RAILWAY_DOMAIN}" if RAILWAY_DOMAIN else "",
 ] if o]
 
@@ -139,10 +143,12 @@ MIDDLEWARE = [
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    #'http://localhost:3000'
-    'https://betpraxis.pt',
-    'https://www.betpraxis.pt',
+    "https://betpraxis.pt",
+    "https://www.betpraxis.pt",
+    "https://api.betpraxis.pt",  # para chamadas diretas ao domínio da API
 ]
+# Está atrás de proxy (Railway Metal Edge) — isto garante que o Django reconhece HTTPS:
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 ROOT_URLCONF = 'liga_de_cursos.urls'
 
