@@ -31,17 +31,18 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 #DEBUG = True
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
+RAILWAY_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 
-ALLOWED_HOSTS = ["www.betpraxis.pt", "betpraxis.pt", ".railway.app", "api.betpraxis.pt",
-    os.getenv("RAILWAY_PUBLIC_DOMAIN", ""),  # domínio temporário da Railway
-]
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://betpraxis.pt",
-    "https://www.betpraxis.pt",
+ALLOWED_HOSTS = [h for h in [
+    "api.betpraxis.pt",
+    RAILWAY_DOMAIN,   # ex: web-production-xxx.up.railway.app
+] if h]
+
+CSRF_TRUSTED_ORIGINS = [o for o in [
     "https://api.betpraxis.pt",
-    f"https://{os.getenv('RAILWAY_PUBLIC_DOMAIN','')}",
-]
+    f"https://{RAILWAY_DOMAIN}" if RAILWAY_DOMAIN else "",
+] if o]
 
 # Application definition
 
