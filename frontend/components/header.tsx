@@ -105,8 +105,8 @@ export default function Header() {
             <Image
               src="/logo.png"
               alt="betpraxis"
-              width={160}
-              height={40}
+              width={140}
+              height={36}
               priority
               sizes="(max-width: 640px) 160px, 200px"
               className="w-auto"
@@ -128,8 +128,8 @@ export default function Header() {
             <Image
               src="/logo.png"
               alt="betpraxis"
-              width={180}
-              height={48}
+              width={150}
+              height={40}
               priority
               sizes="(max-width: 640px) 160px, 200px"
               className="w-auto"
