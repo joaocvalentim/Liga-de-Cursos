@@ -96,7 +96,7 @@ ACCOUNT_SIGNUP_FIELDS = {
 ACCOUNT_LOGIN_METHODS = ['username', 'email']
 #ACCOUNT_EMAIL_REQUIRED = True
 #ACCOUNT_SIGNUP_FIELDS = ['email']  # sem 'username'
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend" # para nao enviar email de confirmacao
+EMAIL_BACKEND = "django.core.mail.backends.dummy.EmailBackend" # para nao enviar email de confirmacao
 ACCOUNT_EMAIL_VERIFICATION = "none"
 # Configurações do django REST Framework - criar apis, definir autenticacao e permissões
 REST_FRAMEWORK = {
@@ -107,6 +107,14 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated', # por default so users autenticados podem aceder às APIs
     )
 }
+
+# Cookies partilháveis entre subdomínios
+SESSION_COOKIE_DOMAIN = ".betpraxis.pt"
+CSRF_COOKIE_DOMAIN = ".betpraxis.pt"
+SESSION_COOKIE_SAMESITE = "None"
+CSRF_COOKIE_SAMESITE = "None"
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
 
 REST_AUTH = {
     'USE_JWT': True,
