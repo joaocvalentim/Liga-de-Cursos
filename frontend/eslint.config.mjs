@@ -20,6 +20,24 @@ const eslintConfig = [
       "next-env.d.ts",
     ],
   },
+  {
+    files: ["**/*.{ts,tsx,js,jsx}"],
+    rules: {
+      // Tipagem
+      "@typescript-eslint/no-explicit-any": "warn",
+
+      // Qualidade de vida (não bloquear build)
+      "prefer-const": "warn",
+      "@typescript-eslint/no-unused-expressions": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }
+      ],
+
+      // (opcional) se ainda existir algum <img> perdido
+      // "@next/next/no-img-element": "warn",
+    },
+  },
 ];
 
 export default eslintConfig;
