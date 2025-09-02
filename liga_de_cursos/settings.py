@@ -31,8 +31,8 @@ SECRET_KEY = os.environ.get("SECRET_KEY")
 #DEBUG = True
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-ALLOWED_HOSTS = [
-    "api.betpraxis.pt",
+
+ALLOWED_HOSTS = ["www.betpraxis.pt", "betpraxis.pt", ".railway.app", "api.betpraxis.pt",
     os.getenv("RAILWAY_PUBLIC_DOMAIN", ""),  # domínio temporário da Railway
 ]
 
