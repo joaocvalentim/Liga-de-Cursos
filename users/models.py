@@ -15,11 +15,28 @@ class User(AbstractUser):
         ('normal', 'Normal'),
     )
     CURSO = (
-        ('soc', 'Sociologia'),
+        ('ant', 'Antropologia'),
+        ('arq', 'Arquitetura'),
+        ('lcd', 'Ciência de Dados'),
+        ('cpo', 'Ciências Politicas'),
+        ('eco', 'Economia'),
+        ('eti', 'Engenharia de Telecomunicações e Informática'),
+        ('lei', 'Engenharia Informática'),
+        ('fin', 'Finanças e Contabilidade'),
+        ('ges', 'Gestão'),
+        ('grh', 'Gestão de Recursos Humanos'),
+        ('gil', 'Gestão Industrial e Logística'),
+        ('gmk', 'Gestão de Marketing'),
+        ('hmc', 'História Moderna e Contemporânea'),
         ('ige', 'Informática e Gestão de Empresas'),
+        ('psi', 'Psicologia'),
+        ('soc', 'Sociologia'),
+        ('ss', 'Serviço Social'),
+        ('sintra', 'Sintra'),               
         ('por definir', 'por definir'),
-
     )
+    
+
     hierarquia = models.CharField(max_length=50, choices=HIERARQUIA)
     tipo = models.CharField(max_length=50, choices=TIPO, default='normal')
     curso = models.CharField(max_length=50, choices=CURSO)

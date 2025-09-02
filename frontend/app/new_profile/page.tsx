@@ -25,16 +25,16 @@ import { API /* ou apiFetch */ } from "@/lib/api";
 
 
 const RANDOM_USERNAMES = [
-  "cacaca loiras ",
-  "pastrano merdoso ",
-  "bebado de merda ",
-  "caro feio ",
-  "dignissimo burro ",
-  "excelentissimo cabrão ",
-  "veteraneco ",
-  "carissimo otário ",
-  "putinha ",
-  "caro conas ",
+  "cacaca_loiras",
+  "pastrano_merdoso",
+  "bebado_de_merda",
+  "caro_feio",
+  "dignissimo_burro",
+  "excelentissimo_cabrao",
+  "veteraneco",
+  "carissimo_otario",
+  "putinha",
+  "caro_conas",
 ];
 type Option = { value: string; label: string };
 
