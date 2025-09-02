@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { API /* ou apiFetch */ } from "@/lib/api";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -13,7 +14,7 @@ export default function RegisterPage() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     try {
-      const response = await fetch("http://localhost:8000/api/registration/", {
+      const response = await fetch(`${API}/api/registration/` , {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({username, email, password1, password2 }),

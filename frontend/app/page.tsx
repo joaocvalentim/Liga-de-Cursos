@@ -57,7 +57,12 @@ type MyBetsPayload = {
   question_votes: Array<{ question: Question; pick_entry: { id: number } }>;
 };
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "production"
+    ? "https://api.betpraxis.pt"
+    : "http://localhost:8000");
+    
 const COMPETITION_ID = 1;
 
 function fmtHour(iso: string) {

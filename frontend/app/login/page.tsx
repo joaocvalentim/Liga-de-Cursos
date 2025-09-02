@@ -2,6 +2,7 @@
 'use client' // This is a client component  - necessary for interactivity   
 import { useState } from 'react' // Import React hooks if needed - gerir estado 
 import { useRouter } from 'next/navigation' // Import Next.js router for navigation - direcionar paginas
+import { API /* ou apiFetch */ } from "@/lib/api";
 
 export default function LoginPage() {
     //inputs user
@@ -14,12 +15,12 @@ export default function LoginPage() {
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault(); // Prevent the default form submission behavior
         try {
-            const response = await fetch('http://localhost:8000/api/login/',{
+            const response = await fetch(`${API}/api/login/`,{
                 method: 'POST', // Define the method as <POST>
                 headers: { 
                   'Content-Type': 'application/json',
                 },// Set the content type to JSON
-                body: JSON.stringify({ email, password }), // Convert the data to JSON format   
+                body: JSON.stringify({ email, password }), // Convert the data to JSON format
             });
             // Check if the response is ok (status in the range 200-299)
             if(!response.ok) {

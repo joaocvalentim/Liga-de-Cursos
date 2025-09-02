@@ -20,6 +20,7 @@ import { useEffect } from "react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
+import { API /* ou apiFetch */ } from "@/lib/api";
 
 
 
@@ -84,7 +85,7 @@ export default function EditProfilePage() {
 
     const fetchUser = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/user/", {
+        const response = await fetch(`${API}/api/user/`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -125,9 +126,9 @@ export default function EditProfilePage() {
         username,
         hierarquia,
         curso, // tem de respeitar os values do modelo: 'ige' | 'soc' | 'nenhum'
-        }; 
-      
-      const response = await fetch("http://localhost:8000/api/user/edit/", {
+        };
+
+      const response = await fetch(`${API}/api/user/edit/`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,

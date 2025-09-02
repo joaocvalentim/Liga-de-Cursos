@@ -28,7 +28,12 @@ type MatchVotesSummary = {
   entry2: { entry_id: number; course: Course; count: number; prob: number };
 };
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+export const API =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "production"
+    ? "https://api.betpraxis.pt"
+    : "http://localhost:8000");
+    
 const COMPETITION_ID = 1;
 
 const STAGE_LABEL: Record<Match["stage"], string> = {
