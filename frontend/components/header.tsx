@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 // Rotas visíveis para todos
 const navGuest = [
@@ -13,7 +14,10 @@ const navGuest = [
 ];
 
 // Rotas extra quando autenticado
-const navAuthed = [...navGuest, { href: "/minhas-apostas", label: "Minhas Apostas" }];
+const navAuthed = [
+  ...navGuest,
+  { href: "/minhas-apostas", label: "Minhas Apostas" },
+];
 
 function cx(...c: Array<string | false | null | undefined>) {
   return c.filter(Boolean).join(" ");
@@ -31,7 +35,8 @@ export default function Header() {
 
   // Ler auth do storage e escutar alterações
   useEffect(() => {
-    const read = () => setIsAuthed(Boolean(localStorage.getItem("access_token")));
+    const read = () =>
+      setIsAuthed(Boolean(localStorage.getItem("access_token")));
     setMounted(true);
     read();
     const onAuthChanged = () => read();
@@ -84,8 +89,6 @@ export default function Header() {
 
   if (!mounted) return null;
 
-
-  
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-gray-50/70 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
@@ -98,7 +101,16 @@ export default function Header() {
             aria-expanded={mobileOpen}
             aria-controls="mobile-menu"
           >
-            <img src="/logo.png" alt="Logo" className="h-25 w-auto" />
+            <Image
+              src="/logo.png"
+              alt="betpraxis"
+              width={120}
+              height={32}
+              priority
+              sizes="(max-width: 640px) 120px, 160px"
+              className="h-8 w-auto"
+            />
+
             <svg
               className={cx("h-4 w-4 transition", mobileOpen && "rotate-180")}
               viewBox="0 0 20 20"
@@ -110,7 +122,15 @@ export default function Header() {
 
           {/* Desktop: logo é link normal */}
           <Link href="/" className="h-25 hidden sm:block hover:opacity-80">
-            <img src="/logo.png" alt="Logo" className="h-25 w-auto" />
+            <Image
+              src="/logo.png"
+              alt="betpraxis"
+              width={140}
+              height={36}
+              priority
+              sizes="(max-width: 640px) 120px, 160px"
+              className="h-9 w-auto"
+            />
           </Link>
 
           {/* Navegação desktop */}
