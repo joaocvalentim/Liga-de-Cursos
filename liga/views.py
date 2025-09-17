@@ -8,6 +8,8 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
+from rest_framework.views import APIView
+
 
 from datetime import datetime, timezone
 from django.db.models import F
@@ -16,6 +18,9 @@ from .models import Competition, CompetitionEntry, Match, MatchStage, MatchStatu
 from .serializers import MatchVoteSerializer, SimpleVoteInputSerializer, SimpleVoteSerializer, StandingEntrySerializer, MatchSerializer, MatchVoteInputSerializer
 
 
+
+from .serializers import PlaceMatchBetInSerializer
+from .services import place_match_bet, compute_match_odds
 # -------------------------
 # Fase de grupos - classificação
 # -------------------------
@@ -366,3 +371,29 @@ def my_bets_view(request):
         "match_votes": MatchVoteSerializer(match_votes, many=True).data,
         "question_votes": SimpleVoteSerializer(simple_votes, many=True).data,
     })
+    
+    
+class PlaceMatchBetView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, match_id: int):
+        ser = PlaceMatchBetInSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        bet = place_match_bet(
+            user=request.user,
+            match_id=match_id,
+            pick_entry_id=ser.validated_data["pick_entry_id"],
+            stake=ser.validated_data["stake"],
+        )
+        # resposta minimal — podes enriquecer conforme precisares
+        return Response(
+            {
+                "id": bet.id,
+                "new_balance": bet.user.points,
+                "stake": bet.stake,
+                "odds_at_bet": str(bet.odds_at_bet),
+                "pick_entry_id": bet.pick_entry_id,
+                "match_id": bet.match_id,
+            },
+            status=status.HTTP_201_CREATED,
+        )

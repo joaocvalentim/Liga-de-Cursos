@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
-from .serializers import UserDetailsSerializer, UserUpdateSerializer # Importa o serializer que converte o user para JSON - feito por mim
+from .serializers import TopUserSerializer, UserDetailsSerializer, UserUpdateSerializer # Importa o serializer que converte o user para JSON - feito por mim
 
 
 User = get_user_model() # usa se user model para ter user personalizado (se tiver). Não obriga a usar User base do Django, 
@@ -44,4 +44,11 @@ def edit_logged_user(request):
         return Response(serializer.data, status=200)
 
     return Response(serializer.errors, status=400) # Retorna os dados do user em formato JSON
+
+@api_view(["GET"])
+@permission_classes([])  # público, tal como o teu list_users
+def top_users(request):
+    qs = User.objects.order_by("-points", "id")[:3]
+    data = TopUserSerializer(qs, many=True).data
+    return Response(data, status=200)
 

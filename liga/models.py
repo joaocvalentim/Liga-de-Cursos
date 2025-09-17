@@ -134,6 +134,12 @@ class MatchVote(TimeStampedModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="match_votes")
     pick_entry = models.ForeignKey(CompetitionEntry, on_delete=models.CASCADE, related_name="picked_in_votes")
 
+    # --- NOVOS CAMPOS ---
+    stake = models.PositiveIntegerField(default=0)  # pontos apostados
+    odds_at_bet = models.DecimalField(max_digits=6, decimal_places=2, default=1.00)  # odd no momento
+    settled = models.BooleanField(default=False)    # já liquidada?
+    payout = models.PositiveIntegerField(default=0) # quanto pagou (0 se perdeu)
+
     class Meta:
         unique_together = ("user", "match")
 
@@ -141,12 +147,9 @@ class MatchVote(TimeStampedModel):
         return f"{self.user} → {self.pick_entry.curso} @ {self.match}"
 
     def clean(self):
-        # o voto tem de escolher um dos dois participantes do jogo
         if self.match_id and self.pick_entry_id:
             if self.pick_entry_id not in (self.match.curso1_id, self.match.curso2_id):
                 raise models.ValidationError("Pick tem de ser uma dos cursos do confronto.")
-
-
 
 class SimpleVoteQuestion(models.Model):
     competition = models.ForeignKey(
@@ -184,24 +187,23 @@ class SimpleVoteQuestion(models.Model):
 
 # Voto simples: user escolhe um CompetitionEntry para a pergunta
 class SimpleVote(models.Model):
-    question = models.ForeignKey(
-        SimpleVoteQuestion, on_delete=models.CASCADE, related_name="votes"
-    )
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="simple_votes"
-    )
-    pick_entry = models.ForeignKey(
-        CompetitionEntry, on_delete=models.CASCADE, related_name="picked_in_simple_votes"
-    )
+    question = models.ForeignKey(SimpleVoteQuestion, on_delete=models.CASCADE, related_name="votes")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="simple_votes")
+    pick_entry = models.ForeignKey(CompetitionEntry, on_delete=models.CASCADE, related_name="picked_in_simple_votes")
+
+    # --- NOVOS CAMPOS (também para perguntas gerais) ---
+    stake = models.PositiveIntegerField(default=0)
+    odds_at_bet = models.DecimalField(max_digits=6, decimal_places=2, default=1.00)
+    settled = models.BooleanField(default=False)
+    payout = models.PositiveIntegerField(default=0)
 
     class Meta:
-        unique_together = ("question", "user")  # um voto por pergunta
+        unique_together = ("question", "user")
 
     def __str__(self):
         return f"{self.user} → {self.pick_entry.curso} [{self.question.text}]"
 
     def clean(self):
-        # garantir que o entry escolhido pertence à MESMA competição da pergunta
         if self.question_id and self.pick_entry_id:
             if self.pick_entry.competition_id != self.question.competition_id:
                 raise ValidationError("O curso escolhido não pertence a esta competição.")

@@ -26,27 +26,42 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 #SECRET_KEY = 'django-insecure-6)7-zxjpzdk+u9ikb_)ynoobr%-hvsfr9b9nhvrx4&n4w4-d1g'
-SECRET_KEY = os.environ.get("SECRET_KEY")
+#SECRET_KEY = os.environ.get("SECRET_KEY")
+SECRET_KEY = os.environ.get("SECRET_KEY") or "aa23#46off^y1_i3@o5zpz9unjho7m+@3b+6opmgfb+(c&y45@"
+
 # SECURITY WARNING: don't run with debug turned on in production!
-#DEBUG = True
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+DEBUG = True
+#DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 RAILWAY_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
 
-
+# hosts: só o host, sem http:// nem portas
 ALLOWED_HOSTS = [h for h in [
-    "api.betpraxis.pt",
-    "betpraxis.pt",
-    "www.betpraxis.pt",
-    RAILWAY_DOMAIN,  # ex: web-production-xxx.up.railway.app
+    "api.betpraxis.pt", "betpraxis.pt", "www.betpraxis.pt",
+    "127.0.0.1", "localhost",
+    RAILWAY_DOMAIN,          # ex: web-xxxx.up.railway.app
 ] if h]
 
 CSRF_TRUSTED_ORIGINS = [o for o in [
     "https://api.betpraxis.pt",
     "https://betpraxis.pt",
     "https://www.betpraxis.pt",
+    # local dev
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
     f"https://{RAILWAY_DOMAIN}" if RAILWAY_DOMAIN else "",
 ] if o]
+
+CORS_ALLOWED_ORIGINS = [
+    "https://betpraxis.pt",
+    "https://www.betpraxis.pt",
+    "https://api.betpraxis.pt",
+    # local dev (Next.js)
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+]
 
 # Application definition
 
@@ -109,12 +124,22 @@ REST_FRAMEWORK = {
 }
 
 # Cookies partilháveis entre subdomínios
-SESSION_COOKIE_DOMAIN = ".betpraxis.pt"
-CSRF_COOKIE_DOMAIN = ".betpraxis.pt"
-SESSION_COOKIE_SAMESITE = "None"
-CSRF_COOKIE_SAMESITE = "None"
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
+if DEBUG:
+    # Ambiente de desenvolvimento/local
+    SESSION_COOKIE_DOMAIN = None
+    CSRF_COOKIE_DOMAIN = None
+    SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+else:
+    # Ambiente de produção
+    SESSION_COOKIE_DOMAIN = ".betpraxis.pt"
+    CSRF_COOKIE_DOMAIN = ".betpraxis.pt"
+    SESSION_COOKIE_SAMESITE = "None"
+    CSRF_COOKIE_SAMESITE = "None"
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 REST_AUTH = {
     'USE_JWT': True,
@@ -150,11 +175,7 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS = [
-    "https://betpraxis.pt",
-    "https://www.betpraxis.pt",
-    "https://api.betpraxis.pt",  # para chamadas diretas ao domínio da API
-]
+
 # Está atrás de proxy (Railway Metal Edge) — isto garante que o Django reconhece HTTPS:
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 

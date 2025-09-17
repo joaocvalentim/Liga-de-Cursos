@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.admin.helpers import ActionForm
 from django.contrib import admin, messages
 from .models import Curso, Competition, CompetitionEntry, Match, MatchVote, MatchStatus, SimpleVote, SimpleVoteQuestion
-from .services import aplicar_resultado, gerar_quartos_de_final, recalcular_classificacao
+from .services import aplicar_resultado, gerar_quartos_de_final, recalcular_classificacao, settle_match_bets
 
 # Register your models here.
 
@@ -83,6 +83,10 @@ class MatchAdmin(admin.ModelAdmin):
             return
 
         fechados = 0
+        total_bets = 0
+        total_awarded = 0
+        total_refunded = 0
+        total_lost = 0
         for m in queryset.select_related("curso1", "curso2"):
             # ignora jogos já finalizados (se quiseres forçar re-fecho, remove esta verificação)
             if m.status == MatchStatus.FT:
@@ -97,9 +101,25 @@ class MatchAdmin(admin.ModelAdmin):
 
             aplicar_resultado(m, vencedor)   # marca FT e, se GROUP, recalcula classificação
             fechados += 1
+            
+            stats = settle_match_bets(m)
+            total_bets += stats["bets"]
+            total_awarded += stats["awarded"]
+            total_refunded += stats["refunded"]
+            total_lost += stats["lost"]
 
         if fechados:
-            self.message_user(request, f"{fechados} confronto(s) fechado(s).", level=messages.SUCCESS)
+            self.message_user(
+                request,
+                (
+                    f"{fechados} confronto(s) fechado(s). "
+                    f"Apostas liquidadas: {total_bets} | "
+                    f"Pagos: +{total_awarded} | "
+                    f"Devolvidos: {total_refunded} | "
+                    f"Perdidos: {total_lost}"
+                ),
+                level=messages.SUCCESS,
+            )
         else:
             self.message_user(request, "Nenhum confronto foi fechado (já estavam como 'Final'?).", level=messages.WARNING)
 
@@ -161,3 +181,4 @@ class SimpleVoteAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+    

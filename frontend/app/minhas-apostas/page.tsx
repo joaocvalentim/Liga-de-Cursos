@@ -20,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { API } from "@/lib/api";
+
 
 /* ========= Tipos (compatíveis com as tuas views) ========= */
 type Course = { id: number; name: string; short_code: string };
@@ -67,11 +69,7 @@ type MyBetsPayload = {
   question_votes: QuestionVoteItem[];
 };
 
-export const API =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://api.betpraxis.pt"
-    : "http://localhost:8000");
+
     
 const COMPETITION_ID = 1;
 
@@ -143,7 +141,7 @@ export default function MinhasApostasPage() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/api/competitions/${COMPETITION_ID}/standings/`);
+        const r = await fetch(`${API}/competitions/${COMPETITION_ID}/standings/`);
         const raw = await r.json();
         const list: StandingEntry[] = Array.isArray(raw) ? raw : raw?.entries ?? [];
         setEntries(list);
@@ -157,7 +155,7 @@ export default function MinhasApostasPage() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${API}/api/me/bets/?competition=${COMPETITION_ID}`, {
+        const r = await fetch(`${API}/me/bets/?competition=${COMPETITION_ID}`, {
           headers: makeHeaders(),
           cache: "no-store",
         });
@@ -173,7 +171,7 @@ export default function MinhasApostasPage() {
         const pairs = await Promise.all(
           liveOrSched.map(async (m) => {
             try {
-              const sr = await fetch(`${API}/api/matches/${m.id}/votes/summary/`, { cache: "no-store" });
+              const sr = await fetch(`${API}/matches/${m.id}/votes/summary/`, { cache: "no-store" });
               if (!sr.ok) return [m.id, null] as const;
               return [m.id, (await sr.json()) as MatchVotesSummary] as const;
             } catch {
@@ -194,7 +192,7 @@ export default function MinhasApostasPage() {
         const qPairs = await Promise.all(
           qIds.map(async (qid) => {
             try {
-              const rr = await fetch(`${API}/api/questions/${qid}/results/`, { cache: "no-store" });
+              const rr = await fetch(`${API}/questions/${qid}/results/`, { cache: "no-store" });
               if (!rr.ok) return [qid, null] as const;
               return [qid, (await rr.json()) as QuestionResults] as const;
             } catch {
@@ -248,14 +246,14 @@ export default function MinhasApostasPage() {
   const submitSimpleVote = async () => {
     if (!currentQuestion || !currentQuestionPick) return;
     try {
-      const r = await fetch(`${API}/api/questions/${currentQuestion.id}/vote/`, {
+      const r = await fetch(`${API}/questions/${currentQuestion.id}/vote/`, {
         method: "POST",
         headers: makeHeaders(),
         body: JSON.stringify({ pick_entry_id: currentQuestionPick }),
       });
       if (r.ok) {
         // refrescar resultados dessa pergunta
-        const rr = await fetch(`${API}/api/questions/${currentQuestion.id}/results/`);
+        const rr = await fetch(`${API}/questions/${currentQuestion.id}/results/`);
         if (rr.ok) {
           const res = (await rr.json()) as QuestionResults;
           setQuestionResults((prev) => ({ ...prev, [currentQuestion.id]: res }));
@@ -273,7 +271,7 @@ export default function MinhasApostasPage() {
   const submitMatchVote = async () => {
     if (!currentMatch || !currentMatchPick) return;
     try {
-      const r = await fetch(`${API}/api/matches/${currentMatch.id}/vote/`, {
+      const r = await fetch(`${API}/matches/${currentMatch.id}/vote/`, {
         method: "POST",
         headers: makeHeaders(),
         body: JSON.stringify({ pick_entry_id: currentMatchPick.id }),
@@ -291,7 +289,7 @@ export default function MinhasApostasPage() {
             : prev
         );
         // refrescar summary
-        const sr = await fetch(`${API}/api/matches/${currentMatch.id}/votes/summary/`);
+        const sr = await fetch(`${API}/matches/${currentMatch.id}/votes/summary/`);
         if (sr.ok) {
           const s = (await sr.json()) as MatchVotesSummary;
           setMatchSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));

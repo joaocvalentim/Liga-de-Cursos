@@ -1,6 +1,6 @@
 # liga/urls.py
 from django.urls import path
-from .views import bracket_view, my_bets_view, question_results_view, question_vote_view, questions_list_view, standings_view, matches_list_view, match_detail_view, match_votes_summary_view, match_vote_view
+from .views import PlaceMatchBetView, bracket_view, my_bets_view, question_results_view, question_vote_view, questions_list_view, standings_view, matches_list_view, match_detail_view, match_votes_summary_view, match_vote_view
 
 
 urlpatterns = [
@@ -25,4 +25,7 @@ urlpatterns = [
     
     #apostas
     path("me/bets/", my_bets_view, name="my-bets"),
+    
+    path("matches/<int:match_id>/bet/", PlaceMatchBetView.as_view(), name="place-match-bet"),
+
 ]
