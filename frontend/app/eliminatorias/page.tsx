@@ -4,7 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useRouter } from "next/navigation"
+import { useRouter } from "next/navigation";
+import { API } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 type Course = { id: number; name: string; short_code: string };
 
@@ -28,12 +30,6 @@ type MatchVotesSummary = {
   entry2: { entry_id: number; course: Course; count: number; prob: number };
 };
 
-export const API =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://api.betpraxis.pt"
-    : "http://localhost:8000");
-    
 const COMPETITION_ID = 1;
 
 const STAGE_LABEL: Record<Match["stage"], string> = {
@@ -103,14 +99,20 @@ export default function EliminatoriasPage() {
   // dialogs
   const [openConfirm, setOpenConfirm] = useState(false);
   const [openLogin, setOpenLogin] = useState(false);
+  const [openAlreadyBet, setOpenAlreadyBet] = useState(false);
   const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
   const [currentPick, setCurrentPick] = useState<{ id: number; course: Course } | null>(null);
+
+  // stake + erros
+  const [stake, setStake] = useState<number>(1);
+  const [betError, setBetError] = useState<string | null>(null);
+  const [placingBet, setPlacingBet] = useState(false);
 
   useEffect(() => {
     (async () => {
       try {
         const r = await fetch(
-          `${API}/api/competitions/${COMPETITION_ID}/matches/?ordering=scheduled_at`,
+          `${API}/competitions/${COMPETITION_ID}/matches/?ordering=scheduled_at`,
           { cache: "no-store" }
         );
         const raw = await r.json();
@@ -123,7 +125,7 @@ export default function EliminatoriasPage() {
         const pairs = await Promise.all(
           todo.map(async (m) => {
             try {
-              const sr = await fetch(`${API}/api/matches/${m.id}/votes/summary/`, { cache: "no-store" });
+              const sr = await fetch(`${API}/matches/${m.id}/votes/summary/`, { cache: "no-store" });
               if (!sr.ok) return [m.id, null] as const;
               return [m.id, (await sr.json()) as MatchVotesSummary] as const;
             } catch {
@@ -144,7 +146,7 @@ export default function EliminatoriasPage() {
     if (!isAuthed) return;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/me/bets/?competition=${COMPETITION_ID}`, { headers: makeHeaders() });
+        const r = await fetch(`${API}/me/bets/?competition=${COMPETITION_ID}`, { headers: makeHeaders() });
         if (!r.ok) return;
         const data = await r.json();
         const map: Record<number, number> = {};
@@ -161,27 +163,54 @@ export default function EliminatoriasPage() {
 
   const askBet = (m: Match, pick: { id: number; course: Course }) => {
     if (!isAuthed) return setOpenLogin(true);
+    // bloqueia logo se já tem aposta neste confronto
+    if (myVotes[m.id]) return setOpenAlreadyBet(true);
+
     setCurrentMatch(m);
     setCurrentPick(pick);
+    setStake(1);
+    setBetError(null);
     setOpenConfirm(true);
   };
+
   const submitBet = async () => {
     if (!currentMatch || !currentPick) return;
+    if (!stake || stake < 1) { setBetError("Indica um valor válido."); return; }
+
     try {
-      const r = await fetch(`${API}/api/matches/${currentMatch.id}/vote/`, {
+      setPlacingBet(true);
+      const r = await fetch(`${API}/matches/${currentMatch.id}/bet/`, {
         method: "POST",
         headers: makeHeaders(),
-        body: JSON.stringify({ pick_entry_id: currentPick.id }),
+        body: JSON.stringify({ pick_entry_id: currentPick.id, stake }),
       });
-      if (r.ok) {
-        setMyVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
-        const sr = await fetch(`${API}/api/matches/${currentMatch.id}/votes/summary/`);
-        if (sr.ok) {
-          const s = (await sr.json()) as MatchVotesSummary;
-          setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
-        }
-      } else if (r.status === 401) setOpenLogin(true);
+
+      const data = await r.json().catch(() => ({}));
+
+      if (r.status === 401) {
+        setOpenConfirm(false);
+        setOpenLogin(true);
+        return;
+      }
+      if (!r.ok) {
+        setBetError(String(data?.detail || "Não foi possível realizar a aposta."));
+        return;
+      }
+
+      // sucesso
+      setMyVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
+      const sr = await fetch(`${API}/matches/${currentMatch.id}/votes/summary/`);
+      if (sr.ok) {
+        const s = (await sr.json()) as MatchVotesSummary;
+        setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
+      }
+
+      // atualizar saldo no header (se a API devolver new_balance)
+      if (typeof data?.new_balance === "number") {
+        window.dispatchEvent(new CustomEvent("balance-changed", { detail: data.new_balance }));
+      }
     } finally {
+      setPlacingBet(false);
       setOpenConfirm(false);
       setCurrentMatch(null);
       setCurrentPick(null);
@@ -249,38 +278,21 @@ export default function EliminatoriasPage() {
   }
 
   function Bracket() {
-  // ordenar para ficar previsível
-  const oqf = [...qf].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
-  const osf = [...sf].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
-  const ofi = [...fin].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
-  const oth = [...third].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
+    // ordenar para ficar previsível
+    const oqf = [...qf].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
+    const osf = [...sf].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
+    const ofi = [...fin].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
+    const oth = [...third].sort((a, b) => +new Date(a.scheduled_at ?? 0) - +new Date(b.scheduled_at ?? 0));
 
-  // colunas: [QF-esq] [SF-esq] [FINAL] [SF-dir] [QF-dir]
-  return (
-    <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
-      {/* QF esquerda (2 jogos) */}
-      <div className="space-y-6">
-        {[0, 1].map((i) => {
-          const m = oqf[i];
-          return (
-            <div key={`qfl-${i}`} className="rounded-xl border p-3">
-              <div className="mb-2 text-xs text-gray-500">{m ? fmtHour(m.scheduled_at) : "—"}</div>
-              <div className="grid grid-cols-2 gap-3">
-                <MatchChip m={m} side="left" />
-                <MatchChip m={m} side="right" />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* SF esquerda — centrada verticalmente */}
-      <div className="flex h-full flex-col">
-        <div className="flex-1 flex items-center">
-          {(() => {
-            const m = osf[0];
+    // colunas: [QF-esq] [SF-esq] [FINAL] [SF-dir] [QF-dir]
+    return (
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-5">
+        {/* QF esquerda (2 jogos) */}
+        <div className="space-y-6">
+          {[0, 1].map((i) => {
+            const m = oqf[i];
             return (
-              <div className="w-full rounded-xl border p-3">
+              <div key={`qfl-${i}`} className="rounded-xl border p-3">
                 <div className="mb-2 text-xs text-gray-500">{m ? fmtHour(m.scheduled_at) : "—"}</div>
                 <div className="grid grid-cols-2 gap-3">
                   <MatchChip m={m} side="left" />
@@ -288,32 +300,66 @@ export default function EliminatoriasPage() {
                 </div>
               </div>
             );
-          })()}
+          })}
         </div>
-      </div>
 
-      {/* Final — centrada verticalmente */}
-      <div className="flex h-full flex-col">
-        <div className="flex-1 flex items-center">
-          <div className="w-full rounded-xl border p-3">
-            <div className="mb-2 text-xs text-gray-500">
-              {ofi[0] ? "Final • " + fmtHour(ofi[0].scheduled_at) : "Final"}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <MatchChip m={ofi[0]} side="left" />
-              <MatchChip m={ofi[0]} side="right" />
+        {/* SF esquerda — centrada verticalmente */}
+        <div className="flex h-full flex-col">
+          <div className="flex-1 flex items-center">
+            {(() => {
+              const m = osf[0];
+              return (
+                <div className="w-full rounded-xl border p-3">
+                  <div className="mb-2 text-xs text-gray-500">{m ? fmtHour(m.scheduled_at) : "—"}</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <MatchChip m={m} side="left" />
+                    <MatchChip m={m} side="right" />
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Final — centrada verticalmente */}
+        <div className="flex h-full flex-col">
+          <div className="flex-1 flex items-center">
+            <div className="w-full rounded-xl border p-3">
+              <div className="mb-2 text-xs text-gray-500">
+                {ofi[0] ? "Final • " + fmtHour(ofi[0].scheduled_at) : "Final"}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <MatchChip m={ofi[0]} side="left" />
+                <MatchChip m={ofi[0]} side="right" />
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* SF direita — centrada verticalmente */}
-      <div className="flex h-full flex-col">
-        <div className="flex-1 flex items-center">
-          {(() => {
-            const m = osf[1];
+        {/* SF direita — centrada verticalmente */}
+        <div className="flex h-full flex-col">
+          <div className="flex-1 flex items-center">
+            {(() => {
+              const m = osf[1];
+              return (
+                <div className="w-full rounded-xl border p-3">
+                  <div className="mb-2 text-xs text-gray-500">{m ? fmtHour(m.scheduled_at) : "—"}</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <MatchChip m={m} side="left" />
+                    <MatchChip m={m} side="right" />
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* QF direita (2 jogos) */}
+        <div className="space-y-6">
+          {[2, 3].map((i) => {
+            const m = oqf[i];
             return (
-              <div className="w-full rounded-xl border p-3">
+              <div key={`qfr-${i}`} className="rounded-xl border p-3">
                 <div className="mb-2 text-xs text-gray-500">{m ? fmtHour(m.scheduled_at) : "—"}</div>
                 <div className="grid grid-cols-2 gap-3">
                   <MatchChip m={m} side="left" />
@@ -321,35 +367,16 @@ export default function EliminatoriasPage() {
                 </div>
               </div>
             );
-          })()}
+          })}
         </div>
       </div>
-
-      {/* QF direita (2 jogos) */}
-      <div className="space-y-6">
-        {[2, 3].map((i) => {
-          const m = oqf[i];
-          return (
-            <div key={`qfr-${i}`} className="rounded-xl border p-3">
-              <div className="mb-2 text-xs text-gray-500">{m ? fmtHour(m.scheduled_at) : "—"}</div>
-              <div className="grid grid-cols-2 gap-3">
-                <MatchChip m={m} side="left" />
-                <MatchChip m={m} side="right" />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
+    );
+  }
 
   return (
     <main className="mx-auto max-w-7xl px-4 py-8">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Eliminatórias</h1>
-
       </div>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm">
@@ -373,11 +400,28 @@ export default function EliminatoriasPage() {
           <DialogHeader>
             <DialogTitle>Confirmar aposta</DialogTitle>
           </DialogHeader>
+
+          {/* Valor da aposta */}
+          <div className="mt-2 space-y-2">
+            <label className="text-sm text-gray-600">Valor a apostar</label>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={stake}
+              onChange={(e) => setStake(Math.max(1, Number(e.target.value)))}
+              inputMode="numeric"
+            />
+            {betError && <p className="text-sm text-red-600">{betError}</p>}
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenConfirm(false)}>
               Cancelar
             </Button>
-            <Button onClick={submitBet}>Sim, apostar</Button>
+            <Button onClick={submitBet} disabled={placingBet || !stake}>
+              {placingBet ? "A apostar..." : "Sim, apostar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -394,6 +438,17 @@ export default function EliminatoriasPage() {
             <Link href="/login">
               <Button onClick={() => setOpenLogin(false)}>Login</Button>
             </Link>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openAlreadyBet} onOpenChange={setOpenAlreadyBet}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Já apostaste neste confronto</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setOpenAlreadyBet(false)}>Ok</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

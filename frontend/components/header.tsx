@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { API } from "@/lib/api";
+
 
 // Rotas visíveis para todos
 const navGuest = [
@@ -30,22 +32,64 @@ export default function Header() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [balance, setBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
 
+
+  async function fetchBalance() {
+    if (!localStorage.getItem("access_token")) {
+      setBalance(null);
+      return;
+    }
+    try {
+      setLoadingBalance(true);
+      const res = await fetch(`${API}/user/`, {
+        headers: {
+          "Authorization": `Bearer ${localStorage.getItem("access_token")}`,
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Falha ao obter utilizador");
+      const me = await res.json();             // precisa de "points" no serializer
+      setBalance(typeof me.points === "number" ? me.points : null);
+    } catch {
+      setBalance(null);
+    } finally {
+      setLoadingBalance(false);
+    }
+  }
+
+
   // Ler auth do storage e escutar alterações
   useEffect(() => {
-    const read = () =>
-      setIsAuthed(Boolean(localStorage.getItem("access_token")));
+    const read = () => {
+      const authed = Boolean(localStorage.getItem("access_token"));
+      setIsAuthed(authed);
+      if (authed) fetchBalance();
+      else setBalance(null);
+    };
     setMounted(true);
     read();
+
     const onAuthChanged = () => read();
-    const onFocus = () => read();
+    const onFocus = () => fetchBalance();
+    const onBalanceChanged = (e: any) => {
+      // permite atualizar imediatamente após aposta (dispatch CustomEvent)
+      if (typeof e?.detail === "number") setBalance(e.detail);
+      else fetchBalance();
+    };
+
     window.addEventListener("auth-changed", onAuthChanged);
     window.addEventListener("focus", onFocus);
+    window.addEventListener("balance-changed", onBalanceChanged as EventListener);
+
     return () => {
       window.removeEventListener("auth-changed", onAuthChanged);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener("balance-changed", onBalanceChanged as EventListener);
     };
   }, []);
 
@@ -112,7 +156,6 @@ export default function Header() {
               className="w-auto"
               style={{ display: 'block', margin: '0 auto' }}
             />
-
             <svg
               className={cx("h-5 w-5 transition", mobileOpen && "rotate-180")}
               viewBox="0 0 20 20"
@@ -157,48 +200,60 @@ export default function Header() {
           </nav>
         </div>
 
-        {/* Ações (desktop) */}
-        <div className="hidden items-center gap-2 sm:flex">
-          {!isAuthed ? (
-            <>
-              <Link
-                href="/login"
-                className={cx(
-                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                  isActive("/login")
-                    ? "bg-gray-200 text-gray-900"
-                    : "border border-gray-300 bg-white text-gray-900 hover:bg-gray-100"
-                )}
-              >
-                Entrar
-              </Link>
-              <Link
-                href="/register"
-                className={cx(
-                  "rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90",
-                  isActive("/register") && "opacity-90"
-                )}
-              >
-                Registar
-              </Link>
-            </>
-          ) : (
-            <button
-              onClick={handleLogout}
-              className="rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+        {/* Direita: Saldo (sempre visível) + ações desktop */}
+        <div className="flex items-center gap-3">
+          {isAuthed && (
+            <div
+              title="Saldo disponível"
+              className="inline-flex items-center rounded-xl border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-900"
             >
-              Sair
-            </button>
+              {loadingBalance ? "—" : (balance ?? "—")}
+              <span className="mr-1">€</span>
+
+            </div>
           )}
+
+          {/* Ações (desktop) */}
+          <div className="hidden items-center gap-2 sm:flex">
+            {!isAuthed ? (
+              <>
+                <Link
+                  href="/login"
+                  className={cx(
+                    "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                    isActive("/login")
+                      ? "bg-gray-200 text-gray-900"
+                      : "border border-gray-300 bg-white text-gray-900 hover:bg-gray-100"
+                  )}
+                >
+                  Entrar
+                </Link>
+                <Link
+                  href="/register"
+                  className={cx(
+                    "rounded-xl bg-black px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90",
+                    isActive("/register") && "opacity-90"
+                  )}
+                >
+                  Registar
+                </Link>
+              </>
+            ) : (
+              <button
+                onClick={handleLogout}
+                className="inline-flex items-center rounded-xl border border-gray-300 bg-black px-3 py-1 text-sm font-semibold text-white hover:opacity-90 "
+              >
+                Sair
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Painel mobile */}
       {mobileOpen && (
         <>
-          {/* overlay para facilitar fechar ao tocar fora */}
           <div className="fixed inset-0 z-40 sm:hidden" />
-
           <div
             id="mobile-menu"
             ref={panelRef}

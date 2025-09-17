@@ -1,4 +1,4 @@
-// app/fase-grupos/page.tsx
+// app/fase-de-grupos/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -13,6 +13,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { API } from "@/lib/api";
 
 /* ========================= Tipos ========================= */
 type Course = { id: number; name: string; short_code?: string };
@@ -55,12 +57,6 @@ type MyBetsPayload = {
 };
 
 /* ========================= Constantes/Helpers ========================= */
-export const API =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://api.betpraxis.pt"
-    : "http://localhost:8000");
-    
 const COMP_ID = 1;
 
 function asArray<T = any>(raw: any, keys: string[] = []): T[] {
@@ -140,11 +136,17 @@ export default function FaseDeGruposPage() {
   // summaries específicos do modal
   const [detailSummaries, setDetailSummaries] = useState<Record<number, MatchVotesSummary>>({});
 
-  // dialogs de aposta (igual à Home)
+  // dialogs de aposta
   const [openConfirmMatch, setOpenConfirmMatch] = useState(false);
   const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
   const [currentPick, setCurrentPick] = useState<{ id: number; course: Course } | null>(null);
   const [openLoginReq, setOpenLoginReq] = useState(false);
+  const [openAlreadyBet, setOpenAlreadyBet] = useState(false);
+
+  // stake + erros (como na Home)
+  const [stake, setStake] = useState<number>(1);
+  const [betError, setBetError] = useState<string | null>(null);
+  const [placingBet, setPlacingBet] = useState(false);
 
   const [loading, setLoading] = useState(true);
 
@@ -153,12 +155,12 @@ export default function FaseDeGruposPage() {
     (async () => {
       try {
         const [stRes, upRes, allRes] = await Promise.all([
-          fetch(`${API}/api/competitions/${COMP_ID}/standings/`, { cache: "no-store" }),
+          fetch(`${API}/competitions/${COMP_ID}/standings/`, { cache: "no-store" }),
           fetch(
-            `${API}/api/competitions/${COMP_ID}/matches/?status=SCHEDULED&ordering=scheduled_at&limit=6`,
+            `${API}/competitions/${COMP_ID}/matches/?status=SCHEDULED&ordering=scheduled_at&limit=6`,
             { cache: "no-store" }
           ),
-          fetch(`${API}/api/competitions/${COMP_ID}/matches/?ordering=scheduled_at`, {
+          fetch(`${API}/competitions/${COMP_ID}/matches/?ordering=scheduled_at`, {
             cache: "no-store",
           }),
         ]);
@@ -177,7 +179,7 @@ export default function FaseDeGruposPage() {
         const sumPairs = await Promise.all(
           list.map(async (m) => {
             try {
-              const r = await fetch(`${API}/api/matches/${m.id}/votes/summary/`, {
+              const r = await fetch(`${API}/matches/${m.id}/votes/summary/`, {
                 cache: "no-store",
               });
               if (!r.ok) return [m.id, null] as const;
@@ -205,7 +207,7 @@ export default function FaseDeGruposPage() {
     if (!isAuthed) return;
     (async () => {
       try {
-        const r = await fetch(`${API}/api/me/bets/?competition=${COMP_ID}`, {
+        const r = await fetch(`${API}/me/bets/?competition=${COMP_ID}`, {
           headers: makeHeaders(),
         });
         if (!r.ok) return;
@@ -268,7 +270,7 @@ export default function FaseDeGruposPage() {
       const pairs = await Promise.all(
         missing.map(async (id) => {
           try {
-            const r = await fetch(`${API}/api/matches/${id}/votes/summary/`, {
+            const r = await fetch(`${API}/matches/${id}/votes/summary/`, {
               cache: "no-store",
             });
             if (!r.ok) return [id, null] as const;
@@ -300,37 +302,72 @@ export default function FaseDeGruposPage() {
     return "—";
   }
 
-  /* -------- submit aposta (igual à Home) -------- */
-  const submitMatchVote = async () => {
+  /* -------- aposta: abrir modal -------- */
+  function askBet(m: Match, pick: { id: number; course: Course }) {
+    if (!isAuthed) return setOpenLoginReq(true);
+    if (myMatchVotes[m.id]) return setOpenAlreadyBet(true);
+    setCurrentMatch(m);
+    setCurrentPick(pick);
+    setStake(1);
+    setBetError(null);
+    setOpenConfirmMatch(true);
+  }
+
+  /* -------- submit aposta (com valor, como na Home) -------- */
+  const submitMatchBet = async () => {
     if (!currentMatch || !currentPick) return;
+    if (!stake || stake < 1) { setBetError("Indica um valor válido."); return; }
+
     try {
-      const r = await fetch(`${API}/api/matches/${currentMatch.id}/vote/`, {
+      setPlacingBet(true);
+      const r = await fetch(`${API}/matches/${currentMatch.id}/bet/`, {
         method: "POST",
         headers: makeHeaders(),
-        body: JSON.stringify({ pick_entry_id: currentPick.id }),
+        body: JSON.stringify({ pick_entry_id: currentPick.id, stake }),
       });
-      if (r.ok) {
-        setMyMatchVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
-        // refrescar summary desse match
-        const sr = await fetch(`${API}/api/matches/${currentMatch.id}/votes/summary/`);
-        if (sr.ok) {
-          const s = (await sr.json()) as MatchVotesSummary;
-          setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
-        }
-        setOpenConfirmMatch(false);
-      } else if (r.status === 401) {
+
+      const data = await r.json().catch(() => ({}));
+
+      if (r.status === 401) {
         setOpenConfirmMatch(false);
         setOpenLoginReq(true);
+        return;
+      }
+      if (!r.ok) {
+        setBetError(String(data?.detail || "Não foi possível realizar a aposta."));
+        return;
+      }
+
+      // sucesso
+      setMyMatchVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
+
+      // refrescar summary do match na sidebar
+      const sr = await fetch(`${API}/matches/${currentMatch.id}/votes/summary/`);
+      if (sr.ok) {
+        const s = (await sr.json()) as MatchVotesSummary;
+        setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
+        setDetailSummaries((prev) => ({ ...prev, [currentMatch.id]: s })); // e no modal
+      }
+
+      // atualizar saldo no header
+      if (typeof data?.new_balance === "number") {
+        window.dispatchEvent(new CustomEvent("balance-changed", { detail: data.new_balance }));
       }
     } catch (e) {
-      console.error("match vote error", e);
+      setBetError("Erro ao comunicar com o servidor.");
+      console.error("match bet error", e);
+    } finally {
+      setPlacingBet(false);
+      setOpenConfirmMatch(false);
+      setCurrentMatch(null);
+      setCurrentPick(null);
     }
   };
 
   if (loading) {
     return (
       <main className="p-6 max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8">Fase de Grupos</h1>
+        <h1 className="text-xl font-bold mb-8">Fase de Grupos</h1>
         <div className="text-sm text-gray-500">A carregar…</div>
       </main>
     );
@@ -430,12 +467,7 @@ export default function FaseDeGruposPage() {
 
                     <div className="flex gap-3">
                       <button
-                        onClick={() => {
-                          if (!isAuthed) return setOpenLoginReq(true);
-                          setCurrentMatch(m);
-                          setCurrentPick({ id: m.entry1_id, course: m.entry1 });
-                          setOpenConfirmMatch(true);
-                        }}
+                        onClick={() => askBet(m, { id: m.entry1_id, course: m.entry1 })}
                         className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
                           mine1 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
                         }`}
@@ -444,12 +476,7 @@ export default function FaseDeGruposPage() {
                       </button>
 
                       <button
-                        onClick={() => {
-                          if (!isAuthed) return setOpenLoginReq(true);
-                          setCurrentMatch(m);
-                          setCurrentPick({ id: m.entry2_id, course: m.entry2 });
-                          setOpenConfirmMatch(true);
-                        }}
+                        onClick={() => askBet(m, { id: m.entry2_id, course: m.entry2 })}
                         className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
                           mine2 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
                         }`}
@@ -493,22 +520,18 @@ export default function FaseDeGruposPage() {
               </div>
             </section>
 
-            {/* Agendados (apenas info + odds) */}
+            {/* Agendados (AGORA COM APOSTA) */}
             <section>
-                <h3 className="mb-2 text-sm font-medium text-gray-600">
-                  Confrontos Agendados -{' '}
-                  <Link
-                    href={`/confrontos?tipo=gerais&curso=${selectedEntryId}`}
-                    className="text-sm font-medium text-gray-700 hover:underline "
-                  >
-                    Apostar
-                  </Link>
-                </h3>
+              <h3 className="mb-2 text-sm font-medium text-gray-600">
+                Confrontos Agendados
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {asArray<Match>(allMatchesRaw, ["matches"])
                   .filter((m) => (m.entry1_id === selectedEntryId || m.entry2_id === selectedEntryId) && m.status !== "FT")
                   .map((m) => {
                     const s = detailSummaries[m.id];
+                    const mine1 = myMatchVotes[m.id] === m.entry1_id;
+                    const mine2 = myMatchVotes[m.id] === m.entry2_id;
                     return (
                       <div key={m.id} className="rounded-lg border p-3">
                         <div className="mb-1 text-xs text-gray-500 text-center">
@@ -520,12 +543,22 @@ export default function FaseDeGruposPage() {
                           <div className="font-semibold">{m.entry2.short_code}</div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-xl bg-gray-100 px-4 py-3 text-center">
+                          <button
+                            onClick={() => askBet(m, { id: m.entry1_id, course: m.entry1 })}
+                            className={`rounded-xl px-4 py-3 text-center transition ${
+                              mine1 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+                            }`}
+                          >
                             <div className="text-lg font-semibold">{showOdd(s?.entry1?.prob)}</div>
-                          </div>
-                          <div className="rounded-xl bg-gray-100 px-4 py-3 text-center">
+                          </button>
+                          <button
+                            onClick={() => askBet(m, { id: m.entry2_id, course: m.entry2 })}
+                            className={`rounded-xl px-4 py-3 text-center transition ${
+                              mine2 ? "bg-black text-white" : "bg-gray-100 hover:bg-gray-200"
+                            }`}
+                          >
                             <div className="text-lg font-semibold">{showOdd(s?.entry2?.prob)}</div>
-                          </div>
+                          </button>
                         </div>
                       </div>
                     );
@@ -547,11 +580,28 @@ export default function FaseDeGruposPage() {
                 : null}
             </DialogDescription>
           </DialogHeader>
+
+          {/* Valor da aposta */}
+          <div className="mt-2 space-y-2">
+            <label className="text-sm text-gray-600">Valor a apostar</label>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={stake}
+              onChange={(e) => setStake(Math.max(1, Number(e.target.value)))}
+              inputMode="numeric"
+            />
+            {betError && <p className="text-sm text-red-600">{betError}</p>}
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenConfirmMatch(false)}>
               Cancelar
             </Button>
-            <Button onClick={submitMatchVote}>Sim, apostar</Button>
+            <Button onClick={submitMatchBet} disabled={placingBet || !stake}>
+              {placingBet ? "A apostar..." : "Sim, apostar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -573,6 +623,17 @@ export default function FaseDeGruposPage() {
             >
               Login
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openAlreadyBet} onOpenChange={setOpenAlreadyBet}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Já apostaste neste confronto</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setOpenAlreadyBet(false)}>Ok</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

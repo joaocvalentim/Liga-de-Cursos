@@ -75,3 +75,7 @@ class SimpleVoteSerializer(serializers.ModelSerializer):
     class Meta:
         model = SimpleVote
         fields = ["id", "question", "pick_entry"]
+        
+class PlaceMatchBetInSerializer(serializers.Serializer):
+    pick_entry_id = serializers.IntegerField()
+    stake = serializers.IntegerField(min_value=1)

@@ -85,7 +85,7 @@ export default function EditProfilePage() {
 
     const fetchUser = async () => {
       try {
-        const response = await fetch(`${API}/api/user/`, {
+        const response = await fetch(`${API}/user/`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -128,7 +128,7 @@ export default function EditProfilePage() {
         curso, // tem de respeitar os values do modelo: 'ige' | 'soc' | 'nenhum'
         };
 
-      const response = await fetch(`${API}/api/user/edit/`, {
+      const response = await fetch(`${API}/user/edit/`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${token}`,

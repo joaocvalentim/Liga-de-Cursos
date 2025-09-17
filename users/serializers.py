@@ -11,20 +11,28 @@ class CustomUserDetailsSerializer(UserDetailsSerializer):
     hierarquia = serializers.CharField()
     tipo = serializers.CharField()
     curso = serializers.CharField()
+    points = serializers.IntegerField(read_only=True)  # <-- NOVO
+
 
     class Meta(UserDetailsSerializer.Meta):
-        fields = UserDetailsSerializer.Meta.fields + ('hierarquia', 'curso', 'tipo')
+        fields = UserDetailsSerializer.Meta.fields + ('hierarquia', 'curso', 'tipo', 'points')
         read_only_fields = ('email',)
 
 class UserDetailsSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id','email', 'username', 'hierarquia', 'curso', 'tipo']
+        fields = ['id', 'email', 'username', 'hierarquia', 'curso', 'tipo', 'points']
+        read_only_fields = ['email', 'points']
         
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta: 
         model = User
         fields = ['username', 'hierarquia', 'curso', ]
+        
+class TopUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["username", "curso", "points"]  # só o que precisas
 
 
         

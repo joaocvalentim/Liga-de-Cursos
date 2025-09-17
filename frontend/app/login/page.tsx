@@ -15,7 +15,7 @@ export default function LoginPage() {
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault(); // Prevent the default form submission behavior
         try {
-            const response = await fetch(`${API}/api/login/`,{
+            const response = await fetch(`${API}/login/`,{
                 method: 'POST', // Define the method as <POST>
                 headers: { 
                   'Content-Type': 'application/json',

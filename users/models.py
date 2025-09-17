@@ -40,6 +40,7 @@ class User(AbstractUser):
     hierarquia = models.CharField(max_length=50, choices=HIERARQUIA)
     tipo = models.CharField(max_length=50, choices=TIPO, default='normal')
     curso = models.CharField(max_length=50, choices=CURSO)
+    points = models.PositiveIntegerField(default=200)
 
 
     def __str__(self): 

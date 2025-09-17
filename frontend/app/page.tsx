@@ -1,4 +1,18 @@
 "use client";
+// Utilitário para fetch simplificado
+async function getJson(url: string, options?: RequestInit) {
+  const r = await fetch(url, options);
+  const contentType = r.headers.get("content-type") || "";
+  if (!r.ok) {
+    const text = await r.text();
+    throw new Error(`Erro HTTP ${r.status} em ${url}: ${text.slice(0, 100)}`);
+  }
+  if (!contentType.includes("application/json")) {
+    const text = await r.text();
+    throw new Error(`Resposta não é JSON em ${url}: ${text.slice(0, 100)}`);
+  }
+  return r.json();
+}
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -20,6 +34,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { API } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 /** Tipos (espelham os serializers do backend) */
 type Course = { id: number; name: string; short_code: string };
@@ -57,12 +73,6 @@ type MyBetsPayload = {
   question_votes: Array<{ question: Question; pick_entry: { id: number } }>;
 };
 
-export const API =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://api.betpraxis.pt"
-    : "http://localhost:8000");
-    
 const COMPETITION_ID = 1;
 
 function fmtHour(iso: string) {
@@ -124,14 +134,19 @@ export default function HomePage() {
 
   const [openLoginReq, setOpenLoginReq] = useState(false);
 
+  const [stake, setStake] = useState<number>(1);
+  const [betError, setBetError] = useState<string | null>(null);
+  const [placingBet, setPlacingBet] = useState(false);
+
+  const [openAlreadyBet, setOpenAlreadyBet] = useState(false);
+
   // standings (para dropdowns)
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(
-          `${API}/api/competitions/${COMPETITION_ID}/standings/`
+        const data = await getJson(
+          `${API}/competitions/${COMPETITION_ID}/standings/`
         );
-        const data = await r.json();
         const list: StandingEntry[] = Array.isArray(data)
           ? data
           : data?.entries ?? [];
@@ -146,17 +161,15 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
-        const rq = await fetch(
-          `${API}/api/competitions/${COMPETITION_ID}/questions/`
+        const raw = await getJson(
+          `${API}/competitions/${COMPETITION_ID}/questions/`
         );
-        const raw = await rq.json();
         const qs: Question[] = Array.isArray(raw) ? raw : raw?.questions ?? [];
         setQuestions(qs);
 
         const results = await Promise.all(
           qs.map(async (q) => {
-            const r = await fetch(`${API}/api/questions/${q.id}/results/`);
-            const res = await r.json();
+            const res = await getJson(`${API}/questions/${q.id}/results/`);
             return [q.id, res] as const;
           })
         );
@@ -173,17 +186,16 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(
-          `${API}/api/competitions/${COMPETITION_ID}/matches/?status=SCHEDULED&ordering=scheduled_at&limit=6`
+        const data = await getJson(
+          `${API}/competitions/${COMPETITION_ID}/matches/?status=SCHEDULED&ordering=scheduled_at&limit=6`
         );
-        const data = await r.json();
+
         const list: Match[] = Array.isArray(data) ? data : data?.matches ?? [];
         setMatches(list);
 
         const summaries = await Promise.all(
           list.map(async (m) => {
-            const sr = await fetch(`${API}/api/matches/${m.id}/votes/summary/`);
-            const s = await sr.json();
+            const s = await getJson(`${API}/matches/${m.id}/votes/summary/`);
             return [m.id, s] as const;
           })
         );
@@ -201,14 +213,12 @@ export default function HomePage() {
     if (!isAuthed) return;
     (async () => {
       try {
-        const r = await fetch(
-          `${API}/api/me/bets/?competition=${COMPETITION_ID}`,
+        const data: MyBetsPayload = await getJson(
+          `${API}/me/bets/?competition=${COMPETITION_ID}`,
           {
             headers: makeHeaders(),
           }
         );
-        if (!r.ok) return;
-        const data: MyBetsPayload = await r.json();
         const map: Record<number, number> = {};
         data.match_votes?.forEach((mv) => {
           map[mv.match.id] = mv.pick_entry.id; // id do ENTRY
@@ -241,6 +251,21 @@ export default function HomePage() {
     if (qIndex >= topQuestions.length) setQIndex(0);
   }, [topQuestions, qIndex]);
 
+  type TopUser = { username: string; curso: string; points: number };
+  const [topUsers, setTopUsers] = useState<TopUser[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/top/`, { cache: "no-store" });
+        const data = await r.json();
+        setTopUsers(Array.isArray(data) ? data : data?.top ?? []);
+      } catch (e) {
+        console.error("top users fetch error", e);
+      }
+    })();
+  }, []);
+
   // helpers
   const titleOf = (q: Question) =>
     q.title ?? q.text ?? q.question ?? "Pergunta";
@@ -261,19 +286,15 @@ export default function HomePage() {
   const submitSimpleVote = async () => {
     if (!currentQuestion || !pickedEntry) return;
     try {
-      const r = await fetch(
-        `${API}/api/questions/${currentQuestion.id}/vote/`,
-        {
-          method: "POST",
-          headers: makeHeaders(),
-          body: JSON.stringify({ pick_entry_id: pickedEntry }),
-        }
-      );
+      const r = await fetch(`${API}/questions/${currentQuestion.id}/vote/`, {
+        method: "POST",
+        headers: makeHeaders(),
+        body: JSON.stringify({ pick_entry_id: pickedEntry }),
+      });
       if (r.ok) {
-        const rr = await fetch(
-          `${API}/api/questions/${currentQuestion.id}/results/`
+        const res = await getJson(
+          `${API}/questions/${currentQuestion.id}/results/`
         );
-        const res = await rr.json();
         setQuestionResults((prev) => ({ ...prev, [currentQuestion.id]: res }));
         setOpenSimpleDialog(false);
       } else if (r.status === 401) {
@@ -285,31 +306,61 @@ export default function HomePage() {
     }
   };
 
-  const submitMatchVote = async () => {
+  const submitMatchBet = async () => {
     if (!currentMatch || !currentPick) return;
+    if (!stake || stake < 1) {
+      setBetError("Indica um valor válido.");
+      return;
+    }
+
     try {
-      const r = await fetch(`${API}/api/matches/${currentMatch.id}/vote/`, {
+      setPlacingBet(true);
+      setBetError(null);
+
+      const r = await fetch(`${API}/matches/${currentMatch.id}/bet/`, {
         method: "POST",
         headers: makeHeaders(),
-        body: JSON.stringify({ pick_entry_id: currentPick.id }),
+        body: JSON.stringify({ pick_entry_id: currentPick.id, stake }),
       });
-      if (r.ok) {
-        setMyMatchVotes((prev) => ({
-          ...prev,
-          [currentMatch.id]: currentPick.id,
-        }));
-        const sr = await fetch(
-          `${API}/api/matches/${currentMatch.id}/votes/summary/`
-        );
-        const s = await sr.json();
-        setMatchSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
-        setOpenConfirmMatch(false);
-      } else if (r.status === 401) {
+
+      if (r.status === 401) {
         setOpenConfirmMatch(false);
         setOpenLoginReq(true);
+        return;
       }
-    } catch (e) {
-      console.error("match vote error", e);
+
+      const data = await r.json();
+      if (!r.ok) {
+        // backend devolve {"detail": "..."} em erros como “Saldo insuficiente.”
+        setBetError(data?.detail || "Não foi possível realizar a aposta.");
+        return;
+      }
+
+      // marca a tua escolha neste confronto
+      setMyMatchVotes((prev) => ({
+        ...prev,
+        [currentMatch.id]: currentPick.id,
+      }));
+
+      // refresca as “odds”/resumo do card
+      const s = await getJson(
+        `${API}/matches/${currentMatch.id}/votes/summary/`
+      );
+      setMatchSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
+
+      // atualiza o header (saldo já vem debitado do backend)
+      if (typeof data?.new_balance === "number") {
+        window.dispatchEvent(
+          new CustomEvent("balance-changed", { detail: data.new_balance })
+        );
+      }
+
+      setOpenConfirmMatch(false);
+    } catch (e: any) {
+      setBetError("Erro ao comunicar com o servidor.");
+      console.error("bet error", e);
+    } finally {
+      setPlacingBet(false);
     }
   };
 
@@ -420,11 +471,41 @@ export default function HomePage() {
           })()
         )}
       </section>
-
+      <section className="mt-8">
+        <h2 className="text-xl font-bold">Top utilizadores</h2>
+        <div className="rounded-xl border bg-white p-4">
+          {topUsers.length === 0 ? (
+            <p className="text-sm text-gray-500">Sem dados.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500">
+                  <th className="py-2">#</th>
+                  <th className="py-2">Username</th>
+                  <th className="py-2">Curso</th>
+                  <th className="py-2 text-right">Pontos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topUsers.map((u, i) => (
+                  <tr key={`${u.username}-${i}`} className="border-t">
+                    <td className="py-2">{["🥇", "🥈", "🥉"][i] ?? i + 1}</td>
+                    <td className="py-2 font-medium">{u.username}</td>
+                    <td className="py-2">{u.curso}</td>
+                    <td className="py-2 text-right font-semibold">
+                      {u.points}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
       {/* Próximos confrontos */}
       <section>
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-2xl font-bold">Próximos confrontos</h2>
+          <h2 className="text-xl font-bold">Próximos confrontos</h2>
           <Link
             href="/confrontos?tipo=confrontos&ordenar=inicio"
             className="text-sm font-medium text-gray-700 hover:underline"
@@ -456,8 +537,12 @@ export default function HomePage() {
                     <button
                       onClick={() => {
                         if (!isAuthed) return setOpenLoginReq(true);
+                        if (isMine1 || isMine2) return setOpenAlreadyBet(true);
+
                         setCurrentMatch(m);
                         setCurrentPick({ id: m.entry1_id, course: m.entry1 });
+                        setStake(1); // <-- novo
+                        setBetError(null); // <-- novo
                         setOpenConfirmMatch(true);
                       }}
                       className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
@@ -475,8 +560,11 @@ export default function HomePage() {
                     <button
                       onClick={() => {
                         if (!isAuthed) return setOpenLoginReq(true);
+                        if (isMine1 || isMine2) return setOpenAlreadyBet(true);
                         setCurrentMatch(m);
                         setCurrentPick({ id: m.entry2_id, course: m.entry2 });
+                        setStake(1); // <-- novo
+                        setBetError(null); // <-- novo
                         setOpenConfirmMatch(true);
                       }}
                       className={`flex-1 rounded-xl px-4 py-3 text-center transition ${
@@ -545,6 +633,21 @@ export default function HomePage() {
                 : null}
             </DialogDescription>
           </DialogHeader>
+
+          {/* NOVO: input do valor */}
+          <div className="mt-2 space-y-2">
+            <label className="text-sm text-gray-600">Valor a apostar</label>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={stake}
+              onChange={(e) => setStake(Math.max(1, Number(e.target.value)))}
+              inputMode="numeric"
+            />
+            {betError && <p className="text-sm text-red-600">{betError}</p>}
+          </div>
+
           <DialogFooter>
             <Button
               variant="outline"
@@ -552,7 +655,9 @@ export default function HomePage() {
             >
               Cancelar
             </Button>
-            <Button onClick={submitMatchVote}>Sim, apostar</Button>
+            <Button onClick={submitMatchBet} disabled={placingBet || !stake}>
+              {placingBet ? "A apostar..." : "Sim, apostar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -573,6 +678,21 @@ export default function HomePage() {
               }}
             >
               Login
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={openAlreadyBet} onOpenChange={setOpenAlreadyBet}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Já apostaste neste confronto</DialogTitle>
+            <DialogDescription>
+              Não é possível apostar mais neste confronto.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenAlreadyBet(false)}>
+              Ok
             </Button>
           </DialogFooter>
         </DialogContent>

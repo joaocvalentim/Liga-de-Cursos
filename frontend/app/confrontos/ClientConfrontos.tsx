@@ -13,6 +13,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { API } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 
 /* ===== Tipos ===== */
 type Course = { id: number; name: string; short_code: string };
@@ -43,12 +45,6 @@ type MyBetsPayload = {
   question_votes: any[];
 };
 
-export const API =
-  process.env.NEXT_PUBLIC_API_BASE_URL ??
-  (process.env.NODE_ENV === "production"
-    ? "https://api.betpraxis.pt"
-    : "http://localhost:8000");
-    
 const COMPETITION_ID = 1;
 
 /* ===== Helpers ===== */
@@ -154,8 +150,14 @@ export default function ClientConfrontos() {
   // dialogs aposta
   const [openConfirm, setOpenConfirm] = useState(false);
   const [openLogin, setOpenLogin] = useState(false);
+  const [openAlreadyBet, setOpenAlreadyBet] = useState(false);
   const [currentMatch, setCurrentMatch] = useState<Match | null>(null);
   const [currentPick, setCurrentPick] = useState<{ id: number; course: Course } | null>(null);
+
+  // stake + erros
+  const [stake, setStake] = useState<number>(1);
+  const [betError, setBetError] = useState<string | null>(null);
+  const [placingBet, setPlacingBet] = useState(false);
 
   // aplicar filtros da query string ao montar
   useEffect(() => {
@@ -188,7 +190,7 @@ export default function ClientConfrontos() {
     (async () => {
       try {
         const r = await fetch(
-          `${API}/api/competitions/${COMPETITION_ID}/standings/`,
+          `${API}/competitions/${COMPETITION_ID}/standings/`,
           { cache: "no-store" }
         );
         const data = await r.json();
@@ -207,7 +209,7 @@ export default function ClientConfrontos() {
     (async () => {
       try {
         const r = await fetch(
-          `${API}/api/competitions/${COMPETITION_ID}/matches/?ordering=scheduled_at`,
+          `${API}/competitions/${COMPETITION_ID}/matches/?ordering=scheduled_at`,
           { cache: "no-store" }
         );
         const raw = await r.json();
@@ -220,7 +222,7 @@ export default function ClientConfrontos() {
           todo.map(async (m) => {
             try {
               const sr = await fetch(
-                `${API}/api/matches/${m.id}/votes/summary/`,
+                `${API}/matches/${m.id}/votes/summary/`,
                 { cache: "no-store" }
               );
               if (!sr.ok) return [m.id, null] as const;
@@ -247,7 +249,7 @@ export default function ClientConfrontos() {
     (async () => {
       try {
         const r = await fetch(
-          `${API}/api/me/bets/?competition=${COMPETITION_ID}`,
+          `${API}/me/bets/?competition=${COMPETITION_ID}`,
           { headers: makeHeaders() }
         );
         if (!r.ok) return;
@@ -314,32 +316,54 @@ export default function ClientConfrontos() {
 
   const askBet = (m: Match, pick: { id: number; course: Course }) => {
     if (!isAuthed) return setOpenLogin(true);
+    if (myMatchVotes[m.id]) return setOpenAlreadyBet(true); // bloqueia se já apostou neste confronto
     setCurrentMatch(m);
     setCurrentPick(pick);
+    setStake(1);
+    setBetError(null);
     setOpenConfirm(true);
   };
 
   const submitBet = async () => {
     if (!currentMatch || !currentPick) return;
+    if (!stake || stake < 1) { setBetError("Indica um valor válido."); return; }
+
     try {
-      const r = await fetch(`${API}/api/matches/${currentMatch.id}/vote/`, {
+      setPlacingBet(true);
+      const r = await fetch(`${API}/matches/${currentMatch.id}/bet/`, {
         method: "POST",
         headers: makeHeaders(),
-        body: JSON.stringify({ pick_entry_id: currentPick.id }),
+        body: JSON.stringify({ pick_entry_id: currentPick.id, stake }),
       });
-      if (r.ok) {
-        setMyMatchVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
-        const sr = await fetch(`${API}/api/matches/${currentMatch.id}/votes/summary/`);
-        if (sr.ok) {
-          const s = (await sr.json()) as MatchVotesSummary;
-          setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
-        }
-      } else if (r.status === 401) {
+
+      const data = await r.json().catch(() => ({}));
+
+      if (r.status === 401) {
+        setOpenConfirm(false);
         setOpenLogin(true);
+        return;
+      }
+      if (!r.ok) {
+        setBetError(String(data?.detail || "Não foi possível realizar a aposta."));
+        return;
+      }
+
+      // sucesso
+      setMyMatchVotes((prev) => ({ ...prev, [currentMatch.id]: currentPick.id }));
+      const sr = await fetch(`${API}/matches/${currentMatch.id}/votes/summary/`);
+      if (sr.ok) {
+        const s = (await sr.json()) as MatchVotesSummary;
+        setSummaries((prev) => ({ ...prev, [currentMatch.id]: s }));
+      }
+
+      if (typeof data?.new_balance === "number") {
+        window.dispatchEvent(new CustomEvent("balance-changed", { detail: data.new_balance }));
       }
     } catch (e) {
+      setBetError("Erro ao comunicar com o servidor.");
       console.error("submit bet error", e);
     } finally {
+      setPlacingBet(false);
       setOpenConfirm(false);
       setCurrentMatch(null);
       setCurrentPick(null);
@@ -552,7 +576,7 @@ export default function ClientConfrontos() {
         )}
       </section>
 
-      {/* Dialog: confirmar aposta */}
+      {/* Dialog: confirmar aposta (com valor) */}
       <Dialog open={openConfirm} onOpenChange={setOpenConfirm}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -563,11 +587,27 @@ export default function ClientConfrontos() {
                 : null}
             </DialogDescription>
           </DialogHeader>
+
+          <div className="mt-2 space-y-2">
+            <label className="text-sm text-gray-600">Valor a apostar</label>
+            <Input
+              type="number"
+              min={1}
+              step={1}
+              value={stake}
+              onChange={(e) => setStake(Math.max(1, Number(e.target.value)))}
+              inputMode="numeric"
+            />
+            {betError && <p className="text-sm text-red-600">{betError}</p>}
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenConfirm(false)}>
               Cancelar
             </Button>
-            <Button onClick={submitBet}>Sim, apostar</Button>
+            <Button onClick={submitBet} disabled={placingBet || !stake}>
+              {placingBet ? "A apostar..." : "Sim, apostar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -585,6 +625,18 @@ export default function ClientConfrontos() {
             <Link href="/login">
               <Button onClick={() => setOpenLogin(false)}>Login</Button>
             </Link>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: já apostaste neste confronto */}
+      <Dialog open={openAlreadyBet} onOpenChange={setOpenAlreadyBet}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Já apostaste neste confronto</DialogTitle>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => setOpenAlreadyBet(false)}>Ok</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
